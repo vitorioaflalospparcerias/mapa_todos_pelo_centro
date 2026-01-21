@@ -1,0 +1,12 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+# Ignorar arquivos de dados pesados
+*.dbf
+*.shp
+*.shx
+*.tif
+
+# Ou ignorar a pasta inteira de dados brutos
+data/raw/
