@@ -1,5 +1,5 @@
 # ==============================================================================
-# ARQUIVO: 03_build.R (Final)
+# ARQUIVO: 03_build.R (Final - Com Domicílios)
 # ==============================================================================
 library(sf)
 library(geojsonsf)
@@ -7,43 +7,163 @@ library(dplyr)
 library(htmltools)
 
 # 1. Helpers
-source("scripts/02_functions.R")
+source("scripts/02_functions.R") 
 
 # 2. Prep
 print(">>> Preparando GeoJSONs...")
+
+# Variáveis globais para legendas
+legenda_uso_html <- ""
+legenda_socio_html <- ""
+legenda_socio_pop_html <- ""
+legenda_socio_dom_html <- "" # <--- NOVA
 
 prep_data <- function(path, tipo) {
   if (!file.exists(path)) return("null")
   df <- readRDS(path) %>% st_transform(4326)
   if(nrow(df) == 0) return("null")
   
+  # --- BLOCO 1: USO DO SOLO ---
   if (tipo == "uso_solo") {
     coluna_alvo <- "tx_uso_h_p"
     if(!"area_m2" %in% names(df)) df$area_m2 <- as.numeric(st_area(df))
-    df[[coluna_alvo]] <- fix_utf8(df[[coluna_alvo]])
+    df[[coluna_alvo]] <- fix_encoding_uso(df[[coluna_alvo]])
     stats <- calcular_ranking_uso(df, coluna_alvo)
     df$cor_hex <- aplicar_cores(df, coluna_alvo, stats$top_nomes)
-    legenda_html <<- gerar_legenda_html_pastel(stats$top_dados, coluna_alvo)
+    legenda_uso_html <<- gerar_legenda_html_pastel(stats$top_dados, coluna_alvo)
     df <- df %>% select(tx_uso_h_p, area_m2, cor_hex, geometry)
     
+    # --- BLOCO 2A: DENSIDADE DEMOGRÁFICA (Vermelho) ---
+  } else if (tipo == "socio_densidade") {
+    paleta <- c("#FFFFB2", "#FECC5C", "#FD8D3C", "#F03B20", "#BD0026")
+    probs <- seq(0, 1, 0.2)
+    quebras <- quantile(df$densidade, probs = probs, na.rm = TRUE)
+    
+    if(length(unique(quebras)) < length(probs)) {
+      df$cor_hex <- paleta[1]
+    } else {
+      df <- df %>% mutate(
+        faixa = cut(densidade, breaks = c(-Inf, quebras[-1]), labels = FALSE, include.lowest = TRUE),
+        cor_hex = paleta[faixa]
+      )
+    }
+    
+    legenda_socio_html <<- ""
+    labels_leg <- round(quebras)
+    for(i in 1:5) {
+      if(i <= length(labels_leg)-1) {
+        label_txt <- paste0(labels_leg[i], " a ", labels_leg[i+1], " hab/km²")
+        legenda_socio_html <<- paste0(legenda_socio_html, sprintf(
+          '<div class="leg-item"><span style="background:%s;"></span>%s</div>', 
+          paleta[i], label_txt
+        ))
+      }
+    }
+    
+    df$txt_tooltip <- paste0(
+      "Setor: ", df$CD_SETOR, "<br>",
+      "População: ", format(df$populacao, big.mark="."), " hab<br>",
+      "Densidade: ", format(round(df$densidade, 1), big.mark=".", decimal.mark=","), " hab/km²"
+    )
+    
+    # --- BLOCO 2B: POPULAÇÃO ABSOLUTA (Azul) ---
+  } else if (tipo == "socio_populacao") {
+    paleta <- c("#EFF3FF", "#BDD7E7", "#6BAED6", "#3182BD", "#08519C")
+    probs <- seq(0, 1, 0.2)
+    quebras <- quantile(df$populacao, probs = probs, na.rm = TRUE)
+    
+    if(length(unique(quebras)) < length(probs)) {
+      df$cor_hex <- paleta[1]
+    } else {
+      df <- df %>% mutate(
+        faixa = cut(populacao, breaks = c(-Inf, quebras[-1]), labels = FALSE, include.lowest = TRUE),
+        cor_hex = paleta[faixa]
+      )
+    }
+    
+    legenda_socio_pop_html <<- ""
+    labels_leg <- round(quebras)
+    for(i in 1:5) {
+      if(i <= length(labels_leg)-1) {
+        label_txt <- paste0(labels_leg[i], " a ", labels_leg[i+1], " hab")
+        legenda_socio_pop_html <<- paste0(legenda_socio_pop_html, sprintf(
+          '<div class="leg-item"><span style="background:%s;"></span>%s</div>', 
+          paleta[i], label_txt
+        ))
+      }
+    }
+    
+    df$txt_tooltip <- paste0(
+      "Setor: ", df$CD_SETOR, "<br>",
+      "<strong>População Total: ", format(df$populacao, big.mark="."), " hab</strong><br>",
+      "Área: ", format(round(df$area_km2, 3), decimal.mark=","), " km²"
+    )
+    
+    # --- BLOCO 2C: DOMICÍLIOS (Roxo) - NOVO ---
+  } else if (tipo == "socio_domicilios") {
+    # Paleta Roxa
+    paleta <- c("#F2F0F7", "#CBC9E2", "#9E9AC8", "#756BB1", "#54278F")
+    
+    probs <- seq(0, 1, 0.2)
+    quebras <- quantile(df$domicilios, probs = probs, na.rm = TRUE)
+    
+    if(length(unique(quebras)) < length(probs)) {
+      df$cor_hex <- paleta[1]
+    } else {
+      df <- df %>% mutate(
+        faixa = cut(domicilios, breaks = c(-Inf, quebras[-1]), labels = FALSE, include.lowest = TRUE),
+        cor_hex = paleta[faixa]
+      )
+    }
+    
+    legenda_socio_dom_html <<- ""
+    labels_leg <- round(quebras)
+    for(i in 1:5) {
+      if(i <= length(labels_leg)-1) {
+        label_txt <- paste0(labels_leg[i], " a ", labels_leg[i+1], " dom.")
+        legenda_socio_dom_html <<- paste0(legenda_socio_dom_html, sprintf(
+          '<div class="leg-item"><span style="background:%s;"></span>%s</div>', 
+          paleta[i], label_txt
+        ))
+      }
+    }
+    
+    df$txt_tooltip <- paste0(
+      "Setor: ", df$CD_SETOR, "<br>",
+      "<strong>Total Domicílios: ", format(df$domicilios, big.mark="."), "</strong><br>",
+      "População: ", format(df$populacao, big.mark="."), " hab"
+    )
+    
+    # --- BLOCO 3: EDIFICAÇÕES ---
   } else if (tipo == "edificacao") {
     df <- df %>% mutate(
       altura = ifelse(is.na(ed_altura) | as.numeric(ed_altura) < 2, 3, as.numeric(ed_altura)),
       cor_hex = case_when(altura < 10 ~ "#fcfdbf", altura < 25 ~ "#fc8961", altura < 50 ~ "#b73779", TRUE ~ "#51127c")
     ) %>% select(ed_id, altura, cor_hex, geometry)
     
+    # --- BLOCO 4: INFRA E AMBIENTAL ---
+  } else if (tipo == "infra" || tipo == "ambiental") {
+    cols <- names(df)[sapply(df, is.character)]
+    for(c in cols) df[[c]] <- fix_encoding_uso(df[[c]])
+    df$cor_hex <- if(tipo=="ambiental") "#27AE60" else "#999999"
+    
+    # --- BLOCO 5: GENÉRICO ---
   } else {
-    cores <- list(piu="#FF0000", triangulo="#000000", distrito="#7570b3", tombado="#8B4513", favela="#fd8d3c", cortico="#984ea3", loteamento="#33a02c", ambiental="#27AE60")
+    cores <- list(piu="#FF0000", triangulo="#000000", distrito="#7570b3", tombado="#8B4513", favela="#fd8d3c", cortico="#984ea3", loteamento="#33a02c")
     df$cor_hex <- if(!is.null(cores[[tipo]])) cores[[tipo]] else "#999999"
     cols <- names(df)[sapply(df, is.character)]
     for(c in cols) df[[c]] <- fix_utf8(df[[c]])
   }
+  
   return(sf_geojson(df))
 }
 
-legenda_html <- ""
-
 # LEITURA
+# Note que todos usam o mesmo RDS base, mas com tipos diferentes para gerar cores diferentes
+json_socio_dens <- prep_data("data/processed/layer_socio_densidade.rds", "socio_densidade")
+json_socio_pop  <- prep_data("data/processed/layer_socio_densidade.rds", "socio_populacao")
+json_socio_dom  <- prep_data("data/processed/layer_socio_densidade.rds", "socio_domicilios") # <--- NOVA
+
 json_uso  <- prep_data("data/processed/layer_uso_solo.rds", "uso_solo")
 json_edif <- prep_data("data/processed/layer_edificacoes.rds", "edificacao")
 json_piu  <- prep_data("data/processed/layer_piu.rds", "piu")
@@ -70,16 +190,11 @@ infra_structure <- list(
   "Concessões" = list("Parcerias" = "infra_conc_parc"),
   "Conectividade" = list("WiFi Livre" = "infra_wifi"),
   "Cultura" = list("Bibliotecas" = "infra_cult_biblio", "Espaços Culturais" = "infra_cult_espaco", "Museus" = "infra_cult_museu", "Teatros/Cinemas" = "infra_cult_teatro"),
-  
   "Educação" = list(
-    "Educ. Infantil (Pública)" = "infra_edu_infantil", 
-    "Ens. Fund./Médio (Público)" = "infra_edu_publica", 
-    "Ensino Técnico (Público)" = "infra_edu_tecnico", 
-    "Rede Privada" = "infra_edu_privada", 
-    "Sistema S (SENAI/SESI/SENAC)" = "infra_edu_sist_s", 
-    "Outros" = "infra_edu_outros"
+    "Educ. Infantil (Pública)" = "infra_edu_infantil", "Ens. Fund./Médio (Público)" = "infra_edu_publica", 
+    "Ensino Técnico (Público)" = "infra_edu_tecnico", "Rede Privada" = "infra_edu_privada", 
+    "Sistema S" = "infra_edu_sist_s", "Outros" = "infra_edu_outros"
   ),
-  
   "Esporte" = list("Centros Esp." = "infra_esp_centro", "Clubes" = "infra_esp_clube", "CDCs" = "infra_esp_cdc", "Estádios" = "infra_esp_estadio"),
   "Saúde" = list("UBS" = "infra_sau_ubs", "Hospitais" = "infra_sau_hosp", "Ambulatórios" = "infra_sau_ambul", "Saúde Mental" = "infra_sau_mental", "DST/Aids" = "infra_sau_dst", "Urgência" = "infra_sau_urgencia", "Outros" = "infra_sau_outros"),
   "Segurança" = list("Bombeiros" = "infra_seg_bombeiro", "GCM" = "infra_seg_gcm", "Polícia Civil" = "infra_seg_civil", "Polícia Militar" = "infra_seg_militar"),
@@ -106,11 +221,12 @@ for(cat_name in names(infra_structure)) {
 
 # Assets
 print(">>> Lendo Assets...")
-style_css <- paste(readLines("assets/style.css", warn=FALSE), collapse = "\n")
-app_js    <- paste(readLines("assets/app.js", warn=FALSE), collapse = "\n")
-logic_uso <- ""; if(file.exists("assets/modules/logic_uso.js")) logic_uso <- paste(readLines("assets/modules/logic_uso.js", warn=FALSE), collapse = "\n")
-logic_amb <- ""; if(file.exists("assets/modules/logic_amb.js")) logic_amb <- paste(readLines("assets/modules/logic_amb.js", warn=FALSE), collapse = "\n")
+style_css   <- paste(readLines("assets/style.css", warn=FALSE), collapse = "\n")
+app_js      <- paste(readLines("assets/app.js", warn=FALSE), collapse = "\n")
+logic_uso   <- ""; if(file.exists("assets/modules/logic_uso.js")) logic_uso <- paste(readLines("assets/modules/logic_uso.js", warn=FALSE), collapse = "\n")
+logic_amb   <- ""; if(file.exists("assets/modules/logic_amb.js")) logic_amb <- paste(readLines("assets/modules/logic_amb.js", warn=FALSE), collapse = "\n")
 logic_infra <- ""; if(file.exists("assets/modules/logic_infra.js")) logic_infra <- paste(readLines("assets/modules/logic_infra.js", warn=FALSE), collapse = "\n")
+logic_socio <- ""; if(file.exists("assets/modules/logic_socio.js")) logic_socio <- paste(readLines("assets/modules/logic_socio.js", warn=FALSE), collapse = "\n")
 
 # HTML
 print(">>> Gerando HTML Final...")
@@ -159,8 +275,11 @@ html_content <- paste0('
 
     <div class="tab-content">
         <div id="tab-socio" class="tab-pane">
-            <span class="group-title">População</span>
-            <div class="layer-item"><label>Densidade Demográfica</label> <input type="checkbox" disabled></div>
+            <button class="btn-clear" onclick="clearCurrentTab()">🗑️ Desmarcar todos</button>
+            <span class="group-title">Censo 2022</span>
+            <div class="layer-item"><label>👥 Densidade Demográfica</label> <input type="checkbox" id="chk-socio_dens" onchange="toggleL(\'socio_dens\')"></div>
+            <div class="layer-item"><label>👤 População Absoluta</label> <input type="checkbox" id="chk-socio_pop" onchange="toggleL(\'socio_pop\')"></div>
+            <div class="layer-item"><label>🏠 Total de Domicílios</label> <input type="checkbox" id="chk-socio_dom" onchange="toggleL(\'socio_dom\')"></div>
         </div>
 
         <div id="tab-uso" class="tab-pane active">
@@ -210,9 +329,10 @@ html_content <- paste0('
     </div>
 </div>
 
-<div id="legenda-uso" class="legend-container"><div class="legend-title">Uso Predominante (Top 10)</div>', legenda_html, '</div>
-
-<div id="legenda-hab" class="legend-container"><div class="legend-title">Habitação Precária</div>
+<div id="legenda-uso" class="legend-container"><div class="legend-title">Uso Predominante (Top 10)</div>', legenda_uso_html, '</div>
+<div id="legenda-socio" class="legend-container"><div class="legend-title">Densidade Demográfica</div>', legenda_socio_html, '</div>
+<div id="legenda-socio-pop" class="legend-container"><div class="legend-title">População Absoluta</div>', legenda_socio_pop_html, '</div>
+<div id="legenda-socio-dom" class="legend-container"><div class="legend-title">Total de Domicílios</div>', legenda_socio_dom_html, '</div> <div id="legenda-hab" class="legend-container"><div class="legend-title">Habitação Precária</div>
     <div class="leg-item"><span style="background:#fd8d3c;"></span>Favelas</div>
     <div class="leg-item"><span style="background:#984ea3;"></span>Cortiços</div>
     <div class="leg-item"><span style="background:#33a02c;"></span>Loteamentos</div>
@@ -225,6 +345,9 @@ html_content <- paste0('
 
 <script>
     var data = {
+        socio_dens: ', json_socio_dens, ',
+        socio_pop: ', json_socio_pop, ',
+        socio_dom: ', json_socio_dom, ', // <--- NOVA
         piu: ', json_piu, ', tri: ', json_tri, ', dist: ', json_dist, ',
         edif: ', json_edif, ', tomb: ', json_tomb, ', uso: ', json_uso, ',
         fav: ', json_fav, ', cort: ', json_cort, ', lote: ', json_lote, ',
@@ -235,6 +358,7 @@ html_content <- paste0('
     ', logic_uso, '
     ', logic_amb, '
     ', logic_infra, '
+    ', logic_socio, '
     ', app_js, '
 </script>
 </body>
@@ -243,3 +367,5 @@ html_content <- paste0('
 
 write(html_content, "outputs/mapa.html")
 print(">>> MAPA TPC GERADO COM SUCESSO: outputs/mapa.html")
+
+rstudioapi::viewer("outputs/mapa.html")

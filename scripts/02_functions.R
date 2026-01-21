@@ -1,6 +1,6 @@
 # ==============================================================================
 # ARQUIVO: 02_functions.R
-# DESCRIÇÃO: Funções Auxiliares (Com Correção de Acentuação)
+# DESCRIÇÃO: Funções Auxiliares (Com Correção Inteligente de Encoding)
 # ==============================================================================
 library(dplyr)
 library(sf)
@@ -12,16 +12,28 @@ CORES_TOP <- c(
 )
 COR_OUTROS <- '#d9d9d9'
 
-# --- 2. FUNÇÃO DE CORREÇÃO DE TEXTO ---
+# --- 2. FUNÇÃO DE CORREÇÃO DE TEXTO (INTELIGENTE) ---
 fix_utf8 <- function(x) {
   if(is.null(x)) return(x)
   x <- as.character(x)
   
-  # Tenta converter de LATIN1 para UTF-8
-  x_convertido <- iconv(x, from = "LATIN1", to = "UTF-8")
+  # Passo 1: Garante que tudo esteja declarado como UTF-8
+  x_final <- enc2utf8(x)
   
-  # Se falhar (NA), mantém o original
-  x_final <- ifelse(is.na(x_convertido), x, x_convertido)
+  # Passo 2: Verifica se ocorreu "Double Encoding" (Mojibake)
+  # Procura por padrões típicos de erro: Ã£ (ã), Ã© (é), Ã³ (ó), Ã§ (ç)
+  # Se encontrar muitos desses casos, tenta reverter a conversão excessiva
+  if (any(grepl("Ã£|Ã©|Ã³|Ãª|Ã§|Ã¡|Ãº|Ã\u0081", x_final))) {
+    x_try <- tryCatch(
+      iconv(x_final, from = "UTF-8", to = "LATIN1"),
+      error = function(e) return(x_final)
+    )
+    
+    # Só aplica a reversão se não gerou NAs (ou seja, se a reversão funcionou)
+    if (!any(is.na(x_try))) {
+      x_final <- x_try
+    }
+  }
   
   return(x_final)
 }
@@ -55,17 +67,30 @@ aplicar_cores <- function(df, col_uso, top_nomes) {
   })
 }
 
-# --- 5. GERAR HTML DA LEGENDA ---
+# --- 5. GERAR HTML DA LEGENDA --
 gerar_legenda_html_pastel <- function(top_dados, col_uso) {
   html_linhas <- ""
-  for(i in 1:nrow(top_dados)) {
-    nome <- top_dados[[col_uso]][i]
-    cor  <- CORES_TOP[(i - 1) %% length(CORES_TOP) + 1]
-    
-    html_linhas <- paste0(html_linhas, sprintf(
-      '<div class="leg-item"><span style="background:%s;"></span>%s</div>', 
-      cor, nome
-    ))
+  if(nrow(top_dados) > 0) {
+    for(i in 1:nrow(top_dados)) {
+      nome <- top_dados[[col_uso]][i]
+      cor  <- CORES_TOP[(i - 1) %% length(CORES_TOP) + 1]
+      
+      html_linhas <- paste0(html_linhas, sprintf(
+        '<div class="leg-item"><span style="background:%s;"></span>%s</div>', 
+        cor, nome
+      ))
+    }
   }
   return(paste0(html_linhas, sprintf('<div class="leg-item"><span style="background:%s;"></span>Outros Usos</div>', COR_OUTROS)))
+}
+
+fix_encoding_uso <- function(x) {
+  if(is.null(x)) return(x)
+  x <- as.character(x)
+  
+  # Força bruta: Diz para o R que o texto VEM do Windows-1252 (padrão comum em SP)
+  # e deve ir para UTF-8. O 'sub' remove caracteres impossíveis de converter.
+  x_convertido <- iconv(x, from = "WINDOWS-1252", to = "UTF-8", sub="")
+  
+  return(x_convertido)
 }

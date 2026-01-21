@@ -30,10 +30,4 @@ verificar_shp <- function(arquivo) {
 }
 
 # COMO USAR
-verificar_shp("equipamentos/saude/equipamento_saude_ambulatorios_especializados_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_hospital_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_outros_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_ubs_posto_centro_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_saude_mental_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_unidades_dst-aids_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_urgencia_emergencia_v2.shp")
+verificar_shp("perfil_sociodemografico/SP_setores_CD2022.shp")

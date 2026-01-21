@@ -59,19 +59,15 @@ window.toggleCat = function(id) {
     }
 }
 
-// --- CONFIGURAÇÃO DAS ABAS (ATUALIZADA COM TRANSPORTE) ---
+// --- CONFIGURAÇÃO DAS ABAS ---
 var layersByTab = {
-    "tab-socio": [],
+    // Lista atualizada com as 3 camadas sociodemográficas
+    "tab-socio": ["socio_dens", "socio_pop", "socio_dom"],
     "tab-uso":   ["uso", "tomb", "fav", "cort", "lote"],
     "tab-amb":   ["parques", "pracas", "arvores"],
-    
-    // LISTA COMPLETA DE INFRAESTRUTURA (Incluindo Transporte agora)
     "tab-infra": [
-        // Transporte (NOVO)
         "trans_metro_est", "trans_trem_est", "trans_metro_lin", "trans_trem_lin", 
         "trans_bus_term", "trans_bus_pt", "trans_bike",
-
-        // Equipamentos Originais
         "infra_abs_bomprato", "infra_abs_feira", "infra_abs_mercado", "infra_abs_sacolao",
         "infra_soc_equip", "infra_conc_parc", "infra_wifi",
         "infra_cult_biblio", "infra_cult_espaco", "infra_cult_museu", "infra_cult_teatro",
@@ -116,7 +112,6 @@ window.clearCurrentTab = function() {
     checkTransparency();
 }
 
-// Navegação
 window.flyToLocation = function(lat, lng, zoom, pitch, bearing) {
     map.flyTo({ center: [lng, lat], zoom: zoom || 16, pitch: pitch || 60, bearing: bearing || -20, speed: 1.2, curve: 1.5 });
 }
@@ -124,28 +119,42 @@ window.flyToLocation = function(lat, lng, zoom, pitch, bearing) {
 // Efeito Pisca-Pisca
 function flashLayer(id) {
     if (!map.getLayer(id)) return;
-    const originalColor = (id === 'piu') ? '#FF0000' : '#000000';
-    const originalWidth = (id === 'piu') ? 3 : 2;
+    const type = map.getLayer(id).type;
     const highlightColor = '#F1C40F';
-    const highlightWidth = 8;
-    map.setPaintProperty(id, 'line-color', highlightColor);
-    map.setPaintProperty(id, 'line-width', highlightWidth);
-    map.setPaintProperty(id, 'line-opacity', 0.8);
-    setTimeout(() => {
-        map.setPaintProperty(id, 'line-color', originalColor);
-        map.setPaintProperty(id, 'line-width', originalWidth);
-        map.setPaintProperty(id, 'line-opacity', 1);
+    
+    let propColor, propSize, originalColor, originalSize;
+    let highlightSize;
+
+    if (type === 'circle') {
+        propColor = 'circle-color'; propSize = 'circle-radius'; highlightSize = 10;
+    } else if (type === 'line') {
+        propColor = 'line-color'; propSize = 'line-width'; highlightSize = 6;
+    } else if (type === 'fill') {
+        propColor = 'fill-color'; propSize = 'fill-opacity'; highlightSize = 0.9;
+    } else {
+        return; 
+    }
+
+    originalColor = map.getPaintProperty(id, propColor);
+    originalSize = map.getPaintProperty(id, propSize);
+
+    const blink = (count) => {
+        if (count <= 0) {
+            map.setPaintProperty(id, propColor, originalColor);
+            if (originalSize !== undefined) map.setPaintProperty(id, propSize, originalSize);
+            return;
+        }
+
+        map.setPaintProperty(id, propColor, highlightColor);
+        if (type !== 'fill') map.setPaintProperty(id, propSize, highlightSize);
+
         setTimeout(() => {
-            map.setPaintProperty(id, 'line-color', highlightColor);
-            map.setPaintProperty(id, 'line-width', highlightWidth);
-            map.setPaintProperty(id, 'line-opacity', 0.8);
-            setTimeout(() => {
-                map.setPaintProperty(id, 'line-color', originalColor);
-                map.setPaintProperty(id, 'line-width', originalWidth);
-                map.setPaintProperty(id, 'line-opacity', 1);
-            }, 300);
+            map.setPaintProperty(id, propColor, originalColor);
+            if (originalSize !== undefined) map.setPaintProperty(id, propSize, originalSize);
+            setTimeout(() => { blink(count - 1); }, 300);
         }, 300);
-    }, 300);
+    };
+    blink(2);
 }
 
 function setLayout(id, vis) {
@@ -153,37 +162,69 @@ function setLayout(id, vis) {
     if(map.getLayer(id+"_l")) map.setLayoutProperty(id+"_l", "visibility", vis);
 }
 
+// --- FUNÇÃO TOGGLE COM TRAVA DE SEGURANÇA TRIPLA ---
 window.toggleL = function(id) {
     var chk = document.getElementById("chk-" + id);
+    if (!chk) return;
+
+    // Lógica de Exclusão Mútua (Densidade vs População vs Domicílios)
+    if (chk.checked) {
+        // Lista de IDs conflitantes
+        const socioIds = ['socio_dens', 'socio_pop', 'socio_dom'];
+        
+        // Verifica se a camada clicada é uma delas
+        if (socioIds.includes(id)) {
+            // Procura se alguma OUTRA já está ligada
+            const conflict = socioIds.find(otherId => {
+                if (otherId === id) return false; // Ignora a própria
+                const otherChk = document.getElementById('chk-' + otherId);
+                return otherChk && otherChk.checked;
+            });
+
+            if (conflict) {
+                const mapNames = {
+                    'socio_dens': 'Densidade Demográfica',
+                    'socio_pop': 'População Absoluta',
+                    'socio_dom': 'Total de Domicílios'
+                };
+                alert(`⚠️ Visualização Conflitante!\n\nPor favor, desmarque a camada '${mapNames[conflict]}' antes de ativar '${mapNames[id]}'.`);
+                chk.checked = false; // Cancela a ativação
+                return;
+            }
+        }
+    }
+
     var vis = chk.checked ? "visible" : "none";
     setLayout(id, vis);
-    if (chk.checked && (id === 'piu' || id === 'tri')) flashLayer(id);
+    if (chk.checked) {
+        flashLayer(id);
+        if (map.getLayer(id + "_l")) flashLayer(id + "_l");
+    }
     updateLegends();
     checkTransparency();
 }
 
-// --- CHECAGEM DE TRANSPARÊNCIA (CORRIGIDO PARA TRANSPORTE) ---
 function checkTransparency() {
     if (!map.getLayer('edif')) return;
     const activeTabPane = document.querySelector('.tab-pane.active');
     const activeTabId = activeTabPane ? activeTabPane.id : null;
-    let targetOpacity = 0.95; 
+    let targetOpacity = 0.9;
     
     if (activeTabId === 'tab-infra') {
         const infraLayers = layersByTab["tab-infra"];
-        // Agora verifica também se algum transporte está ligado
         const isAnyInfraChecked = infraLayers.some(id => {
             const el = document.getElementById("chk-" + id);
             return el && el.checked;
         });
-        if (isAnyInfraChecked) targetOpacity = 0.08; 
+        if (isAnyInfraChecked) targetOpacity = 0.15; 
     } else {
-        const groundLayers = ["fav", "cort", "lote", "uso", "parques", "pracas"];
+        // Lista de camadas que devem deixar os prédios transparentes
+        const groundLayers = ["socio_dens", "socio_pop", "socio_dom", "fav", "cort", "lote", "uso", "parques", "pracas", "arvores", "tomb"];
         const isAnyGroundChecked = groundLayers.some(id => {
             const el = document.getElementById("chk-" + id);
             return el && el.checked;
         });
-        if (isAnyGroundChecked) targetOpacity = 0.3;
+        if (isAnyGroundChecked) targetOpacity = 0.15;
     }
     map.setPaintProperty('edif', 'fill-extrusion-opacity-transition', { duration: 300 });
     map.setPaintProperty('edif', 'fill-extrusion-opacity', targetOpacity);
@@ -196,44 +237,100 @@ function updateLegends() {
     document.getElementById("legenda-uso").style.display = uso ? "block" : "none";
     var hab = ["chk-fav", "chk-cort", "chk-lote"].some(id => document.getElementById(id)?.checked);
     document.getElementById("legenda-hab").style.display = hab ? "block" : "none";
+    
+    // Legendas Sociodemográficas (Exclusivas)
+    var socioDens = document.getElementById("chk-socio_dens")?.checked;
+    if(document.getElementById("legenda-socio")) document.getElementById("legenda-socio").style.display = socioDens ? "block" : "none";
+    
+    var socioPop = document.getElementById("chk-socio_pop")?.checked;
+    if(document.getElementById("legenda-socio-pop")) document.getElementById("legenda-socio-pop").style.display = socioPop ? "block" : "none";
+
+    var socioDom = document.getElementById("chk-socio_dom")?.checked;
+    if(document.getElementById("legenda-socio-dom")) document.getElementById("legenda-socio-dom").style.display = socioDom ? "block" : "none";
 }
 
 function addTooltip(layerId, propName) {
-    map.on('mouseenter', layerId, (e) => {
+    map.on('mousemove', layerId, (e) => {
         map.getCanvas().style.cursor = 'pointer';
-        var desc = e.features[0].properties[propName];
-        if(desc && desc !== "null" && desc !== "undefined") {
-            hoverPopup.setLngLat(e.lngLat).setHTML(desc).addTo(map);
+
+        const features = map.queryRenderedFeatures(e.point, { layers: [layerId] });
+        if (!features.length) return;
+
+        const rawNames = features.map(f => {
+            let val = f.properties[propName];
+            return val ? val : "Sem nome";
+        });
+        
+        const uniqueNames = [...new Set(rawNames)];
+
+        // Cores com suporte 3D
+        let layerColor = '#333'; 
+        if (map.getLayer(layerId)) {
+            const type = map.getLayer(layerId).type;
+            if (type === 'fill-extrusion') {
+                 layerColor = map.getPaintProperty(layerId, 'fill-extrusion-color');
+            } else if (type === 'fill') {
+                 layerColor = map.getPaintProperty(layerId, 'fill-color');
+            } else if (type === 'circle') {
+                 layerColor = map.getPaintProperty(layerId, 'circle-color');
+            } else if (type === 'line') {
+                 layerColor = map.getPaintProperty(layerId, 'line-color');
+            }
         }
+
+        if (!layerColor || Array.isArray(layerColor)) layerColor = "#555";
+
+        let title = "ITENS ENCONTRADOS";
+        if (layerId === 'tomb') title = "BENS TOMBADOS";
+        if (layerId === 'fav') title = "FAVELAS";
+        if (layerId === 'uso') title = "USO DO SOLO";
+        if (layerId === 'socio_dens') title = "DENSIDADE DEMOGRÁFICA";
+        if (layerId === 'socio_pop') title = "POPULAÇÃO ABSOLUTA";
+        if (layerId === 'socio_dom') title = "TOTAL DE DOMICÍLIOS";
+        
+        let htmlContent = "";
+        htmlContent += `<div style="border-bottom: 2px solid ${layerColor}; margin-bottom: 5px; font-weight:bold; font-size:11px; color:${layerColor}">${title}</div>`;
+        htmlContent += `<ul style="margin:0; padding-left:15px; list-style-type: disc;">`;
+        
+        uniqueNames.forEach(name => {
+            // Se for socio, o conteúdo já é HTML formatado no R, não usa <li>
+            if(layerId.startsWith('socio_')) {
+                htmlContent = `<div style="border-bottom: 2px solid ${layerColor}; margin-bottom: 5px; font-weight:bold; font-size:11px; color:${layerColor}">${title}</div>${name}`;
+            } else {
+                let display = name.replace(/Ã\?/g, "Ç").replace(/Ã\s/g, "Ã"); 
+                htmlContent += `<li style="margin-bottom:2px; color:#fff;">${display}</li>`;
+            }
+        });
+        
+        if(!layerId.startsWith('socio_')) htmlContent += `</ul>`;
+
+        hoverPopup.setLngLat(e.lngLat).setHTML(htmlContent).addTo(map);
     });
-    map.on('mousemove', layerId, (e) => { if (hoverPopup.isOpen()) hoverPopup.setLngLat(e.lngLat); });
-    map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; hoverPopup.remove(); });
+
+    map.on('mouseleave', layerId, () => {
+        map.getCanvas().style.cursor = '';
+        hoverPopup.remove();
+    });
 }
 
 // LOAD
 map.on("load", function () {
-    // Adiciona a base de satélite (que raramente dá erro)
     map.addSource('satellite-source', {
         'type': 'raster', 'tiles': ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
         'tileSize': 256, 'attribution': '&copy; Esri', 'maxzoom': 17
     });
     map.addLayer({ 'id': 'satellite-layer', 'type': 'raster', 'source': 'satellite-source', 'paint': {}, 'layout': { 'visibility': 'none' }});
 
-    // --- BLOCO DE SEGURANÇA (TRY / CATCH) ---
-    // Se der erro em qualquer camada aqui dentro, ele não trava o loader
     try {
+        // 1. CARREGA LÓGICAS (INIT USO CRIA A CAMADA EDIFICAÇÕES)
         if (typeof initUso === "function") initUso(map);
         if (typeof initAmb === "function") initAmb(map);
         if (typeof initInfra === "function") initInfra(map);
+        
+        // 2. CARREGA O SÓCIO DEPOIS (Pois ele tenta colocar camadas abaixo do 'edif')
+        if (typeof initSocio === "function") initSocio(map); 
 
-        if(typeof data.edif !== 'undefined' && data.edif !== "null") {
-            map.addSource("edif", {type:"geojson", data:data.edif});
-            map.addLayer({
-                id: "edif", type: "fill-extrusion", source: "edif",
-                paint: { "fill-extrusion-color": ["get", "cor_hex"], "fill-extrusion-height": ["get", "altura"], "fill-extrusion-opacity": 0.95 },
-                layout: { visibility: "visible" }
-            });
-        }
+        // 3. CARREGA O RESTANTE DAS REFERÊNCIAS
         if(typeof data.dist !== 'undefined') { map.addSource("dist", {type:"geojson", data:data.dist}); map.addLayer({ id: "dist", type: "line", source: "dist", paint: {"line-color": "#7570b3", "line-width": 2, "line-dasharray": [2, 2]}, layout: {visibility: "none"} }); }
         if(typeof data.piu !== 'undefined') { map.addSource("piu", {type:"geojson", data:data.piu}); map.addLayer({ id: "piu", type: "line", source: "piu", paint: {"line-color": "#FF0000", "line-width": 3}, layout: {visibility: "visible"} }); }
         if(typeof data.tri !== 'undefined') { map.addSource("tri", {type:"geojson", data:data.tri}); map.addLayer({ id: "tri", type: "line", source: "tri", paint: {"line-color": "#000", "line-width": 2}, layout: {visibility: "none"} }); }
@@ -242,16 +339,13 @@ map.on("load", function () {
         updateLegends();
         checkTransparency();
         
-        // INTRO CINEMÁTICA (Coloquei dentro do try também)
         map.jumpTo({ center: [-46.633, -23.550], zoom: 12, pitch: 0, bearing: 0 });
         setTimeout(() => { map.flyTo({ center: [-46.633, -23.550], zoom: 14.5, pitch: 55, bearing: -20, speed: 0.5, curve: 1 }); }, 800);
 
     } catch (erro) {
-        // Se houver erro, mostramos no console, mas o código segue para esconder o loader
         console.error("ERRO CRÍTICO NO CARREGAMENTO DAS CAMADAS:", erro);
     }
 
-    // --- LIBERA O LOADER (AGORA FORA DO RISCO) ---
     document.getElementById('loader').style.opacity = '0';
     setTimeout(() => { document.getElementById('loader').style.display = 'none'; }, 500);
 });
