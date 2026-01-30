@@ -10,3 +10,7 @@
 
 # Ou ignorar a pasta inteira de dados brutos
 data/raw/
+data/processed/
+outputs/
+*.gpkg
+*.html

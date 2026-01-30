@@ -25,15 +25,10 @@ verificar_shp <- function(arquivo) {
   
   # 2. Mostra o Head (sem geometria para facilitar a leitura)
   cat("\n👀 AMOSTRA DE DADOS (2 linhas):\n")
-  print(head(st_drop_geometry(shp), 2))
+  print(head(st_drop_geometry(shp), 10))
   cat("\n--------------------------------------------------\n")
 }
 
 # COMO USAR
-verificar_shp("equipamentos/saude/equipamento_saude_ambulatorios_especializados_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_hospital_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_outros_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_ubs_posto_centro_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_saude_mental_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_unidades_dst-aids_v2.shp")
-verificar_shp("equipamentos/saude/equipamento_saude_urgencia_emergencia_v2.shp")
+verificar_shp("SAD69_SHP_edificacao_BELEM/SAD69_SHP_edificacao_BELEM.shp")
+

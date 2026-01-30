@@ -1,34 +1,45 @@
 # ==============================================================================
-# ARQUIVO: scripts/99_debug_rds.R
-# DESCRIÇÃO: Verifica o dado PROCESSADO (que vai pro HTML)
+# ARQUIVO: 04_check_columns.R
+# DESCRIÇÃO: Diagnóstico rápido para descobrir nomes de colunas
 # ==============================================================================
+
 library(sf)
 library(dplyr)
 
-cat("\n🕵️  INVESTIGAÇÃO DO ARQUIVO PROCESSADO (METRÔ)\n")
-path <- "data/processed/trans_metro_lin.rds"
+# Caminho do arquivo de edificações (Confirme se é este mesmo)
+path_edif <- "data/processed/layer_edificacoes.rds"
 
-if (!file.exists(path)) {
-  stop("❌ O arquivo processado não existe. Rode o 01_etl.R primeiro.")
+print(paste(">>> Lendo arquivo:", path_edif))
+
+if (!file.exists(path_edif)) {
+  stop("❌ ARQUIVO NÃO ENCONTRADO! Verifique se o caminho está correto.")
 }
 
-dados <- readRDS(path)
+# Lê o arquivo
+edif <- readRDS(path_edif)
 
-cat(">>> Nomes das Colunas no RDS (Isso vai pro GeoJSON):\n")
-print(colnames(dados))
+print(">>> ARQUIVO CARREGADO COM SUCESSO!")
+print("---------------------------------------------------")
 
-# Tenta achar a coluna de nome/cor
-col_candidata <- grep("linha", colnames(dados), value = TRUE, ignore.case = TRUE)
-cat("\n>>> Colunas parecidas com 'linha':\n")
-print(col_candidata)
+# 1. Mostra todas as colunas
+print(">>> LISTA DE COLUNAS DISPONÍVEIS:")
+print(names(edif))
 
-if(length(col_candidata) > 0) {
-  col <- col_candidata[1] # Pega a primeira que achar
-  cat(paste0("\n>>> Valores únicos na coluna '", col, "':\n"))
+print("---------------------------------------------------")
+
+# 2. Procura colunas que tenham 'area' no nome (pra facilitar)
+cols_area <- grep("area", names(edif), ignore.case = TRUE, value = TRUE)
+
+if (length(cols_area) > 0) {
+  print(">>> CANDIDATAS A ÁREA ENCONTRADAS:")
+  print(cols_area)
   
-  vals <- unique(st_drop_geometry(dados)[[col]])
-  # Dput mostra se tem espaço escondido (ex: "AZUL ")
-  dput(vals) 
+  # Mostra uma amostra dos dados dessas colunas pra ver se tem números
+  print(">>> AMOSTRA DE DADOS (Primeiras 5 linhas):")
+  print(edif %>% st_drop_geometry() %>% select(all_of(cols_area)) %>% head(5))
 } else {
-  cat("\n⚠️ ALERTA: Nenhuma coluna de 'linha' encontrada! Verifique o ETL.\n")
+  print("⚠️ Nenhuma coluna com a palavra 'area' foi encontrada.")
 }
+
+print("---------------------------------------------------")
+print(">>> Verifique qual desses nomes é o correto e me avise!")

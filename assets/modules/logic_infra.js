@@ -1,99 +1,40 @@
 /* ARQUIVO: assets/modules/logic_infra.js */
 
 function initInfra(map) {
-    console.log(">>> Inicializando Módulo: Infraestrutura (Paletas Variadas + Labels Unificados)");
+    console.log(">>> Inicializando Módulo: Infraestrutura");
 
-    // --- 1. CONFIGURAÇÃO DE CORES (CATEGORIA VS VARIAÇÕES) ---
+    const HEAD_EDU = "#2980B9"; 
+    const PALETTE_EDU = { infantil: "#AED6F1", publica: "#5DADE2", tecnico: "#3498DB", sist_s: "#2874A6", outros: "#1B4F72", privada: "#85C1E9" };
 
-    // EDUCAÇÃO (Tons de Azul)
-    const HEAD_EDU = "#2980B9"; // Cor do Título do Label (Azul Forte)
-    const PALETTE_EDU = {
-        infantil: "#AED6F1", // Azul Bem Claro
-        publica:  "#5DADE2", // Azul Claro
-        tecnico:  "#3498DB", // Azul Médio
-        sist_s:   "#2874A6", // Azul Escuro
-        outros:   "#1B4F72", // Azul Muito Escuro
-        privada:  "#85C1E9"  // Azul Lavanda
-    };
+    const HEAD_SAU = "#C0392B"; 
+    const PALETTE_SAU = { ubs: "#F5B7B1", ambul: "#F1948A", mental: "#EC7063", dst: "#E74C3C", urgencia: "#CB4335", hospital: "#943126", outros: "#641E16" };
 
-    // SAÚDE (Tons de Rosa/Vermelho)
-    const HEAD_SAU = "#C0392B"; // Vermelho Forte
-    const PALETTE_SAU = {
-        ubs:        "#F5B7B1", // Rosa Claro
-        ambul:      "#F1948A", // Salmão
-        mental:     "#EC7063", // Vermelho Suave
-        dst:        "#E74C3C", // Vermelho
-        urgencia:   "#CB4335", // Vermelho Tijolo
-        hospital:   "#943126", // Vinho
-        outros:     "#641E16"  // Marrom Avermelhado
-    };
+    const HEAD_CULT = "#8E44AD"; 
+    const PALETTE_CULT = { biblio: "#D2B4DE", espaco: "#AF7AC5", museu: "#9B59B6", teatro: "#76448A" };
 
-    // CULTURA (Tons de Roxo)
-    const HEAD_CULT = "#8E44AD"; // Roxo Forte
-    const PALETTE_CULT = {
-        biblio: "#D2B4DE", // Lilás
-        espaco: "#AF7AC5", // Roxo Médio
-        museu:  "#9B59B6", // Ametista
-        teatro: "#76448A"  // Roxo Escuro
-    };
+    const HEAD_ESP = "#D35400"; 
+    const PALETTE_ESP = { centro: "#FAD7A0", clube: "#F5CBA7", cdc: "#E67E22", estadio: "#A04000" };
 
-    // ESPORTE (Tons de Laranja)
-    const HEAD_ESP = "#D35400"; // Laranja Abóbora
-    const PALETTE_ESP = {
-        centro:  "#FAD7A0", // Creme
-        clube:   "#F5CBA7", // Pêssego
-        cdc:     "#E67E22", // Cenoura
-        estadio: "#A04000"  // Ferrugem
-    };
+    const HEAD_ABS = "#27AE60"; 
+    const PALETTE_ABS = { bomprato: "#ABEBC6", feira: "#58D68D", mercado: "#2ECC71", sacolao: "#1D8348" };
 
-    // ABASTECIMENTO (Tons de Verde)
-    const HEAD_ABS = "#27AE60"; // Verde Esmeralda
-    const PALETTE_ABS = {
-        bomprato: "#ABEBC6", // Verde Água
-        feira:    "#58D68D", // Verde Claro
-        mercado:  "#2ECC71", // Verde Médio
-        sacolao:  "#1D8348"  // Verde Bandeira
-    };
+    const HEAD_SOC = "#D4AC0D"; 
+    const PALETTE_SOC = { assist: "#F9E79F", parc: "#F4D03F", wifi: "#B7950B" };
 
-    // SOCIAL (Tons de Amarelo/Terra)
-    const HEAD_SOC = "#D4AC0D"; // Dourado
-    const PALETTE_SOC = {
-        assist: "#F9E79F", // Amarelo Claro
-        parc:   "#F4D03F", // Amarelo
-        wifi:   "#B7950B"  // Ouro
-    };
-
-    // SEGURANÇA (Tons de Cinza/Chumbo)
     const HEAD_SEG = "#7F8C8D"; 
-    const PALETTE_SEG = {
-        bombeiro: "#E6B0AA", // (Exceção: Bombeiro levemente avermelhado mas desaturado)
-        gcm:      "#BDC3C7", // Prata
-        civil:    "#7F8C8D", // Cinza
-        militar:  "#2C3E50"  // Chumbo
-    };
+    const PALETTE_SEG = { bombeiro: "#E6B0AA", gcm: "#BDC3C7", civil: "#7F8C8D", militar: "#2C3E50" };
 
-    // SERVIÇOS (Tons Variados/Neutros)
     const HEAD_SERV = "#F39C12"; 
-    const PALETTE_SERV = {
-        poup:   "#FCF3CF",
-        desc:   "#F9E79F",
-        corr:   "#F7DC6F",
-        cons:   "#F4D03F",
-        rec:    "#F1C40F",
-        sab:    "#3498DB" // Azul Sabesp
-    };
+    const PALETTE_SERV = { poup: "#FCF3CF", corr: "#F7DC6F", cons: "#F4D03F" };
 
 
     // --- FUNÇÃO DE LIMPEZA DE NOMES ---
     function cleanName(name) {
         if (!name || typeof name !== 'string') return name;
         let n = name.trim(); 
-
-        // Mojibake fixes
         n = n.replace(/Ã\?/g, "Ç"); n = n.replace(/Ã\s/g, "Ã"); n = n.replace(/BÃ\S+/g, "BÁSICA");
         n = n.replace(/Ã©/g, "é"); n = n.replace(/Ã£/g, "ã"); n = n.replace(/Ã¡/g, "á"); n = n.replace(/Ã\*/g, "Í");
 
-        // Remove prefixos
         const prefixes = [
             "Bibliotecas Públicas \\(inclui Bosques e Pontos de Leitura\\) - ", "Biblioteca - ",
             "Centros Culturais, Casas de Cultura, Espaços Culturais - ", "Centro Cultural - ", "Espaço Cultural - ",
@@ -115,38 +56,25 @@ function initInfra(map) {
         let nome = null;
         let endereco = props["tx_enderec"] ? " (" + props["tx_enderec"] + ")" : "";
 
-        // Transporte
         if (props["nm_linha_m"]) return "Linha " + props["nm_linha_m"];
         if (props["nm_linha"]) return "Linha " + props["nm_linha"];
 
-        // Cultura
         if (props["nm_tipo_eq"] && props["nm_equipam"]) {
              let nomeLimpo = cleanName(props["nm_equipam"]);
              nome = props["nm_tipo_eq"] + " - " + nomeLimpo;
-        } 
-        // Geral
-        else {
+        } else {
             const candidates = ["nm_equipam", "nm_estacao", "nm_ponto_o", "nm_termina", "nm_trecho_", "nm_equip", "eq_nome", "nome", "nm_local", "equipament", "nm_estab", "no_entidade", "no_fantasia", "ds_equip", "nome_equip", "equipamento", "nome_local", "nm_unidade", "nm_linha", "ds_nome", "nm_ponto"];
             for (let key of candidates) { if (props[key]) { nome = props[key]; break; } }
-            if (!nome) {
-                for (let key in props) {
-                    let val = props[key];
-                    if (typeof val === 'string' && val.length > 3) {
-                        let k = key.toLowerCase();
-                        if (k.includes("nome") || k.includes("nm_") || k.includes("desc") || k.includes("fantasia")) {
-                            nome = val; break;
-                        }
-                    }
-                }
-            }
         }
         if (nome) return cleanName(nome) + endereco;
+        
+        // Fallback se não achar nome, mas tiver endereço (caso do WiFi se a lógica falhar)
+        if (props["tx_enderec"]) return props["tx_enderec"];
+        
         return "Infraestrutura";
     }
 
-    // --- FUNÇÕES DE DESENHO (Atualizadas para 2 cores: Marker & Header) ---
-
-    // addPt(id, geojson, COR_BOLINHA, Titulo, Coluna, COR_LABEL)
+    // --- FUNÇÕES DE DESENHO ---
     function addPt(id, geojson, markerColor, categoryTitle, colunaNome = null, headerColor = null) {
         if(!geojson || geojson === "null") return;
         if(map.getSource(id)) return;
@@ -162,7 +90,6 @@ function initInfra(map) {
             }, 
             layout: { visibility: "none" } 
         });
-        // Usa headerColor se existir, senão usa a cor da bolinha
         setupInfraTooltip(id, categoryTitle, headerColor || markerColor, colunaNome);
     }
     
@@ -194,12 +121,19 @@ function initInfra(map) {
             let p = e.features[0].properties;
             
             let finalName;
-            if (propKey && p[propKey]) {
-                let raw = p[propKey];
-                let addr = p["tx_enderec"] ? " (" + p["tx_enderec"] + ")" : "";
-                finalName = cleanName(raw) + addr;
+            
+            // Lógica Especial para WiFi: Mostra APENAS o endereço, sem duplicar
+            if (layerId === 'infra_wifi') {
+                finalName = p['tx_enderec'] || "Endereço não disponível";
             } else {
-                finalName = findBestName(p);
+                // Lógica Padrão
+                if (propKey && p[propKey]) {
+                    let raw = p[propKey];
+                    let addr = p["tx_enderec"] ? " (" + p["tx_enderec"] + ")" : "";
+                    finalName = cleanName(raw) + addr;
+                } else {
+                    finalName = findBestName(p);
+                }
             }
             
             let uiColor = Array.isArray(colorHex) ? "#FFD700" : colorHex;
@@ -237,7 +171,7 @@ function initInfra(map) {
 
     // --- EXECUÇÃO DAS CAMADAS ---
 
-    // 1. EDUCAÇÃO (HEADER AZUL + BOLINHAS DEGRADÊ)
+    // 1. EDUCAÇÃO
     addPt("infra_edu_infantil", data.infra_edu_infantil, PALETTE_EDU.infantil, "Educação Infantil (Pública)", null, HEAD_EDU); 
     addPt("infra_edu_publica",  data.infra_edu_publica,  PALETTE_EDU.publica,  "Ensino Fund./Médio (Público)", null, HEAD_EDU); 
     addPt("infra_edu_tecnico",  data.infra_edu_tecnico,  PALETTE_EDU.tecnico,  "Ensino Técnico (Público)", null, HEAD_EDU); 
@@ -245,7 +179,7 @@ function initInfra(map) {
     addPt("infra_edu_outros",   data.infra_edu_outros,   PALETTE_EDU.outros,   "Outros Equipamentos de Educação", null, HEAD_EDU); 
     addPt("infra_edu_privada",  data.infra_edu_privada,  PALETTE_EDU.privada,  "Rede Privada de Ensino", null, HEAD_EDU); 
 
-    // 2. SAÚDE (HEADER VERMELHO + BOLINHAS DEGRADÊ)
+    // 2. SAÚDE
     addPt("infra_sau_ubs",      data.infra_sau_ubs,      PALETTE_SAU.ubs,      "UBS", "nm_equipam", HEAD_SAU); 
     addPt("infra_sau_ambul",    data.infra_sau_ambul,    PALETTE_SAU.ambul,    "Ambulatório", "nm_equipam", HEAD_SAU); 
     addPt("infra_sau_mental",   data.infra_sau_mental,   PALETTE_SAU.mental,   "Saúde Mental (CAPS)", "nm_equipam", HEAD_SAU); 
@@ -254,42 +188,40 @@ function initInfra(map) {
     addPt("infra_sau_hosp",     data.infra_sau_hosp,     PALETTE_SAU.hospital, "Hospital", "nm_equipam", HEAD_SAU); 
     addPt("infra_sau_outros",   data.infra_sau_outros,   PALETTE_SAU.outros,   "Saúde (Outros)", "nm_equipam", HEAD_SAU); 
 
-    // 3. CULTURA (HEADER ROXO + BOLINHAS DEGRADÊ)
+    // 3. CULTURA
     addPt("infra_cult_biblio",  data.infra_cult_biblio,  PALETTE_CULT.biblio, "Biblioteca", null, HEAD_CULT); 
     addPt("infra_cult_espaco",  data.infra_cult_espaco,  PALETTE_CULT.espaco, "Espaço Cultural", null, HEAD_CULT); 
     addPt("infra_cult_museu",   data.infra_cult_museu,   PALETTE_CULT.museu,  "Museu", null, HEAD_CULT); 
     addPt("infra_cult_teatro",  data.infra_cult_teatro,  PALETTE_CULT.teatro, "Teatro / Cinema", null, HEAD_CULT); 
 
-    // 4. ESPORTE (HEADER LARANJA + BOLINHAS DEGRADÊ)
+    // 4. ESPORTE
     addPt("infra_esp_centro",   data.infra_esp_centro,   PALETTE_ESP.centro,  "Centro Esportivo", null, HEAD_ESP); 
     addPt("infra_esp_clube",    data.infra_esp_clube,    PALETTE_ESP.clube,   "Clube Esportivo", null, HEAD_ESP); 
     addPt("infra_esp_cdc",      data.infra_esp_cdc,      PALETTE_ESP.cdc,     "Clube da Comunidade (CDC)", null, HEAD_ESP); 
     addPt("infra_esp_estadio",  data.infra_esp_estadio,  PALETTE_ESP.estadio, "Estádio", null, HEAD_ESP); 
 
-    // 5. ABASTECIMENTO (HEADER VERDE + BOLINHAS DEGRADÊ)
+    // 5. ABASTECIMENTO
     addPt("infra_abs_bomprato", data.infra_abs_bomprato, PALETTE_ABS.bomprato, "Bom Prato", null, HEAD_ABS); 
     addPt("infra_abs_feira",    data.infra_abs_feira,    PALETTE_ABS.feira,    "Feira Livre", null, HEAD_ABS); 
     addPt("infra_abs_mercado",  data.infra_abs_mercado,  PALETTE_ABS.mercado,  "Mercado Municipal", "nm_equipam", HEAD_ABS); 
     addPt("infra_abs_sacolao",  data.infra_abs_sacolao,  PALETTE_ABS.sacolao,  "Sacolão", "nm_equipam", HEAD_ABS); 
 
-    // 6. SOCIAL (HEADER DOURADO + BOLINHAS DEGRADÊ)
+    // 6. SOCIAL & CONECTIVIDADE
     addPt("infra_soc_equip",    data.infra_soc_equip,    PALETTE_SOC.assist, "Assistência Social", null, HEAD_SOC); 
     addPoly("infra_conc_parc",  data.infra_conc_parc,    PALETTE_SOC.parc,   "Concessão / Parceria", null, HEAD_SOC); 
-    addPt("infra_wifi",         data.infra_wifi,         PALETTE_SOC.wifi,   "WiFi Livre", "tx_enderec", HEAD_SOC);
+    // MUDANÇA: Passa null na coluna para a lógica especial cuidar do endereço
+    addPt("infra_wifi",         data.infra_wifi,         PALETTE_SOC.wifi,   "WiFi Livre", null, HEAD_SOC);
 
-    // 7. SEGURANÇA (HEADER CINZA + BOLINHAS DEGRADÊ)
+    // 7. SEGURANÇA
     addPt("infra_seg_bombeiro", data.infra_seg_bombeiro, PALETTE_SEG.bombeiro, "Bombeiros", null, HEAD_SEG); 
     addPt("infra_seg_gcm",      data.infra_seg_gcm,      PALETTE_SEG.gcm,      "Guarda Civil (GCM)", null, HEAD_SEG); 
     addPt("infra_seg_civil",    data.infra_seg_civil,    PALETTE_SEG.civil,    "Polícia Civil", null, HEAD_SEG); 
     addPt("infra_seg_militar",  data.infra_seg_militar,  PALETTE_SEG.militar,  "Polícia Militar", null, HEAD_SEG); 
 
-    // 8. SERVIÇOS (HEADER AMARELO + BOLINHAS DEGRADÊ)
+    // 8. SERVIÇOS (Removidos Receita, Sabesp, Descomplica)
     addPt("infra_serv_poupatempo",  data.infra_serv_poupatempo,  PALETTE_SERV.poup, "Poupatempo", null, HEAD_SERV); 
-    addPt("infra_serv_descomplica", data.infra_serv_descomplica, PALETTE_SERV.desc, "Descomplica SP", null, HEAD_SERV); 
     addPt("infra_serv_correios",    data.infra_serv_correios,    PALETTE_SERV.corr, "Correios", null, HEAD_SERV); 
     addPt("infra_serv_consulado",   data.infra_serv_consulado,   PALETTE_SERV.cons, "Consulado", null, HEAD_SERV); 
-    addPt("infra_serv_receita",     data.infra_serv_receita,     PALETTE_SERV.rec,  "Receita Federal", null, HEAD_SERV); 
-    addPt("infra_serv_sabesp",      data.infra_serv_sabesp,      PALETTE_SERV.sab,  "Sabesp", null, HEAD_SERV); 
     addPoly("infra_serv_shopping",  data.infra_serv_shopping,    "#7D6608",         "Shopping Center", null, HEAD_SERV); 
 
     // 9. TRANSPORTE

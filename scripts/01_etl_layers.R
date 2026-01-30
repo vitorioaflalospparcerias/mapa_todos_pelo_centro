@@ -1,5 +1,5 @@
 # ==============================================================================
-# ARQUIVO: 01_etl_data.R (Completo e Estável)
+# ARQUIVO: 01_etl_layers.R (Completo)
 # ==============================================================================
 library(sf)
 library(dplyr)
@@ -23,7 +23,7 @@ infra_map <- list(
   infra_cult_museu      = "equipamentos/cultura/equipamento_cultura_museus_v3.shp",
   infra_cult_teatro     = "equipamentos/cultura/equipamento_cultura_teatro_cinema_show_v3.shp",
   
-  # --- EDUCAÇÃO (COMPLETA) ---
+  # --- EDUCAÇÃO ---
   infra_edu_tecnico     = "equipamentos/educacao/equipamento_educacao_ensino_tecnico_rede_publica_v2.shp",
   infra_edu_infantil    = "equipamentos/educacao/equipamento_educacao_infantil_rede_publica_v2.shp",
   infra_edu_outros      = "equipamentos/educacao/equipamento_educacao_outros_v2.shp",
@@ -31,6 +31,7 @@ infra_map <- list(
   infra_edu_publica     = "equipamentos/educacao/equipamento_educacao_rede_publica_v2.shp",
   infra_edu_sist_s      = "equipamentos/educacao/equipamento_educacao_senai_sesi_senac_v2.shp",
   
+  # --- ESPORTE / SAÚDE / SEGURANÇA / SERVIÇOS ---
   infra_esp_centro      = "equipamentos/esporte/equipamento_esporte_centro_esportivo_v2.shp",
   infra_esp_clube       = "equipamentos/esporte/equipamento_esporte_clubes_v2.shp",
   infra_esp_cdc         = "equipamentos/esporte/equipamento_esporte_clubesdacomunidade.shp",
@@ -113,7 +114,7 @@ if(length(lista_edif) > 0) {
 }
 
 print(">>> 3. Processando Uso e Habitação...")
-print("   > Uso do Solo (Recorte: PIU Total)")
+print("    > Uso do Solo (Recorte: PIU Total)")
 uso_piu <- unique(st_filter(ler_transformar(path_uso_solo), piu))
 uso_piu$area_m2 <- as.numeric(st_area(uso_piu))
 proc_save(uso_piu, "layer_uso_solo")
@@ -135,12 +136,36 @@ print(">>> 5. Processando INFRAESTRUTURA...")
 for (name in names(infra_map)) {
   path_rel <- infra_map[[name]]
   full_path <- file.path(base_raw, path_rel)
-  cat(paste("   >", name, "...\n"))
+  cat(paste("    >", name, "...\n"))
   shp <- ler_transformar(full_path)
   if(!is.null(shp)) {
     recorte <- unique(st_filter(shp, piu))
     proc_save(recorte, name)
   }
+}
+
+print(">>> 6. Processando Sociodemográfico (Censo 2022)...")
+path_censo <- file.path(base_raw, "perfil_sociodemografico/SP_setores_CD2022.shp")
+
+# Ler e Transformar
+censo <- ler_transformar(path_censo)
+
+if(!is.null(censo)) {
+  # 1. Filtra pelo PIU
+  censo_piu <- st_filter(censo, piu)
+  
+  # 2. Tratamento de Dados
+  censo_piu <- censo_piu %>%
+    mutate(
+      populacao  = as.numeric(v0001),
+      domicilios = as.numeric(v0003), # <--- COLUNA NOVA (Total Domicílios)
+      area_km2   = as.numeric(AREA_KM2),
+      densidade  = ifelse(area_km2 > 0, populacao / area_km2, 0)
+    ) %>%
+    select(CD_SETOR, populacao, domicilios, area_km2, densidade, geometry)
+  
+  # 3. Salva (Mantemos o mesmo arquivo, agora com mais colunas)
+  proc_save(censo_piu, "layer_socio_densidade")
 }
 
 print(">>> ETL CONCLUÍDO!")
