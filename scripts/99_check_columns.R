@@ -30,5 +30,5 @@ verificar_shp <- function(arquivo) {
 }
 
 # COMO USAR
-verificar_shp("SAD69_SHP_edificacao_BELEM/SAD69_SHP_edificacao_BELEM.shp")
+verificar_shp("IPTU_2025_geocodificado_FINALcomareas.csv")
 

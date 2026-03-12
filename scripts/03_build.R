@@ -1,5 +1,5 @@
 # ==============================================================================
-# ARQUIVO: 03_build.R (Edificações 3D + Dados Corrigidos)
+# ARQUIVO: 03_build.R (Final: Empilhamento Visual Espaçado Corretamente)
 # ==============================================================================
 library(sf)
 library(geojsonsf)
@@ -10,7 +10,7 @@ library(tools)
 
 source("scripts/02_functions.R") 
 
-print(">>> Preparando GeoJSONs...")
+print(">>> Preparando GeoJSONs (Modo Otimizado)...")
 
 # Variáveis globais para legendas
 legenda_uso_html <- ""; legenda_tomb_status_html <- ""; legenda_tomb_orgao_html <- "";  
@@ -26,14 +26,21 @@ prep_data <- function(path, tipo) {
   
   if(is.null(df) || nrow(df) == 0) return("null")
   
+  df <- df[!st_is_empty(df), ]
+  if (!tipo %in% c("edificacao", "iptu_points", "estab", "arvores")) {
+    try({ df <- st_simplify(df, dTolerance = 0.00005, preserveTopology = TRUE) }, silent=TRUE)
+  }
+  
   if (tipo == "uso_solo") {
     coluna_alvo <- "tx_uso_h_p"
     if(!"area_m2" %in% names(df)) df$area_m2 <- as.numeric(st_area(df))
+    df <- df %>% filter(area_m2 > 5)
     df[[coluna_alvo]] <- fix_encoding_uso(df[[coluna_alvo]])
     stats <- calcular_ranking_uso(df, coluna_alvo)
     df$cor_hex <- aplicar_cores(df, coluna_alvo, stats$top_nomes)
     legenda_uso_html <<- gerar_legenda_html_pastel(stats$top_dados, coluna_alvo)
     df <- df %>% select(tx_uso_h_p, area_m2, cor_hex, geometry)
+    
   } else if (tipo == "estabelecimentos") {
     path_piu <- "data/processed/layer_piu.rds"
     if (file.exists(path_piu)) {
@@ -42,32 +49,53 @@ prep_data <- function(path, tipo) {
     }
     data_cols <- setdiff(names(df), attr(df, "sf_column"))
     for(col in data_cols) { df[[col]] <- as.character(df[[col]]); df[[col]] <- fix_utf8(df[[col]]) }
+    
+  } else if (tipo == "iptu_points") {
+    if("logradouro" %in% names(df)) df$logradouro <- fix_utf8(df$logradouro)
+    if("numero" %in% names(df)) df$numero <- fix_utf8(as.character(df$numero))
+    if("precisao" %in% names(df)) df$precisao <- as.character(df$precisao)
+    
   } else if (tipo == "tomb_status") {
     df$bp_status <- fix_encoding_uso(df$bp_status)
     cats <- unique(df$bp_status); cats <- cats[!is.na(cats) & cats != "NA" & cats != ""]
-    paleta <- c("#8c510a", "#bf812d", "#dfc27d", "#f6e8c3", "#c7eae5") 
+    paleta <- c("#8c510a", "#f6e8c3", "#fc8961") 
     cores_map <- setNames(rep(paleta, length.out=length(cats)), cats)
     df$cor_hex <- cores_map[df$bp_status]; df$cor_hex[is.na(df$cor_hex)] <- "#00000000"
     legenda_tomb_status_html <<- ""
-    for(cat in names(cores_map)) { if(cat %in% df$bp_status) legenda_tomb_status_html <<- paste0(legenda_tomb_status_html, sprintf('<div class="leg-item"><span style="background:%s;"></span>%s</div>', cores_map[cat], cat)) }
+    for(cat in names(cores_map)) { 
+      if(cat %in% df$bp_status) {
+        display_name <- cat
+        if(cat == "APT") display_name <- "APT (Bem em Processo de Tombamento)"
+        if(cat == "APT / ESTUDO") display_name <- "APT / ESTUDO (Área em Processo de Tombamento)"
+        legenda_tomb_status_html <<- paste0(legenda_tomb_status_html, sprintf('<div class="leg-item"><span style="background:%s;"></span>%s</div>', cores_map[cat], display_name)) 
+      }
+    }
     cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_utf8(df[[c]])
+    
   } else if (tipo == "tomb_orgao") {
     has_protection <- function(col) { t <- toupper(as.character(col)); return(!is.na(t) & !str_detect(t, "NÃO CONSTA") & !str_detect(t, "NAO CONSTA") & str_length(t) > 2) }
     df <- df %>% mutate( is_mun = has_protection(bp_compres), is_est = has_protection(bp_condeph), is_fed = has_protection(bp_iphan) ) %>% mutate( jurisdicao = case_when( is_mun & is_est & is_fed ~ "Três Esferas (Mun/Est/Fed)", is_mun & is_est ~ "Municipal + Estadual", is_mun & is_fed ~ "Municipal + Federal", is_est & is_fed ~ "Estadual + Federal", is_mun ~ "Apenas Municipal (Conpresp)", is_est ~ "Apenas Estadual (Condephaat)", is_fed ~ "Apenas Federal (IPHAN)", TRUE ~ "Outros / Em Análise" ) )
-    cores_org <- c("Três Esferas (Mun/Est/Fed)" = "#000000", "Municipal + Estadual" = "#542788", "Municipal + Federal" = "#b2182b", "Estadual + Federal" = "#d6604d", "Apenas Municipal (Conpresp)" = "#2166ac", "Apenas Estadual (Condephaat)" = "#d95f02", "Apenas Federal (IPHAN)" = "#4393c3", "Outros / Em Análise" = "#999999")
+    cores_org <- c("Três Esferas (Mun/Est/Fed)" = "#000000", "Municipal + Estadual" = "#542788", "Municipal + Federal" = "#b2182b", "Estadual + Federal" = "#d6604d", "Apenas Municipal (Conpresp)" = "#2166ac", "Apenas Estadual (Condephaat)" = "#d95f02", "Apenas Federal (IPHAN)" = "#FFFFB2", "Outros / Em Análise" = "#999999")
     df$cor_hex <- cores_org[df$jurisdicao]; df$cor_hex[is.na(df$cor_hex)] <- "#999999"
     legenda_tomb_orgao_html <<- ""; for(cat in names(cores_org)) { if(cat %in% unique(df$jurisdicao)) legenda_tomb_orgao_html <<- paste0(legenda_tomb_orgao_html, sprintf('<div class="leg-item"><span style="background:%s;"></span>%s</div>', cores_org[cat], cat)) }
     cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_utf8(df[[c]])
+    
+  } else if (tipo == "tomb_geral") {
+    df$cor_hex <- "#8E44AD" 
+    cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_utf8(df[[c]])
+    
   } else if (tipo == "socio_densidade") {
     paleta <- c("#FFFFB2", "#FECC5C", "#FD8D3C", "#F03B20", "#BD0026"); quebras <- quantile(df$densidade, probs = seq(0, 1, 0.2), na.rm = TRUE)
     if(length(unique(quebras)) < 5) df$cor_hex <- paleta[1] else df <- df %>% mutate(faixa = cut(densidade, breaks = c(-Inf, quebras[-1]), labels = FALSE, include.lowest = TRUE), cor_hex = paleta[faixa])
     legenda_socio_html <<- ""; labels_leg <- round(quebras); for(i in 1:5) if(i < length(labels_leg)) legenda_socio_html <<- paste0(legenda_socio_html, sprintf('<div class="leg-item"><span style="background:%s;"></span>%s a %s hab/km²</div>', paleta[i], labels_leg[i], labels_leg[i+1]))
     df$txt_tooltip <- paste0("Setor: ", df$CD_SETOR, "<br>População: ", format(df$populacao, big.mark="."), " hab<br>Densidade: ", format(round(df$densidade, 1), big.mark=".", decimal.mark=","), " hab/km²")
+    
   } else if (tipo == "socio_populacao") {
     paleta <- c("#EFF3FF", "#BDD7E7", "#6BAED6", "#3182BD", "#08519C"); quebras <- quantile(df$populacao, probs = seq(0, 1, 0.2), na.rm = TRUE)
     if(length(unique(quebras)) < 5) df$cor_hex <- paleta[1] else df <- df %>% mutate(faixa = cut(populacao, breaks = c(-Inf, quebras[-1]), labels = FALSE, include.lowest = TRUE), cor_hex = paleta[faixa])
     legenda_socio_pop_html <<- ""; labels_leg <- round(quebras); for(i in 1:5) if(i < length(labels_leg)) legenda_socio_pop_html <<- paste0(legenda_socio_pop_html, sprintf('<div class="leg-item"><span style="background:%s;"></span>%s a %s hab</div>', paleta[i], labels_leg[i], labels_leg[i+1]))
     df$txt_tooltip <- paste0("Setor: ", df$CD_SETOR, "<br><strong>População: ", format(df$populacao, big.mark="."), " hab</strong>")
+    
   } else if (tipo == "socio_domicilios") {
     paleta <- c("#F2F0F7", "#CBC9E2", "#9E9AC8", "#756BB1", "#54278F"); quebras <- quantile(df$domicilios, probs = seq(0, 1, 0.2), na.rm = TRUE)
     if(length(unique(quebras)) < 5) df$cor_hex <- paleta[1] else df <- df %>% mutate(faixa = cut(domicilios, breaks = c(-Inf, quebras[-1]), labels = FALSE, include.lowest = TRUE), cor_hex = paleta[faixa])
@@ -75,14 +103,7 @@ prep_data <- function(path, tipo) {
     df$txt_tooltip <- paste0("Setor: ", df$CD_SETOR, "<br><strong>Domicílios: ", format(df$domicilios, big.mark="."), "</strong>")
     
   } else if (tipo == "edificacao") {
-    # EDIFICAÇÕES 3D (Mantém altura, descarta área)
-    df <- df %>% 
-      mutate(
-        altura = ifelse(is.na(ed_altura) | as.numeric(ed_altura) < 2, 3, as.numeric(ed_altura)), 
-        cor_hex = case_when(altura < 10 ~ "#fcfdbf", altura < 25 ~ "#fc8961", altura < 50 ~ "#b73779", TRUE ~ "#51127c")
-      ) %>% 
-      select(ed_id, altura, cor_hex, geometry)
-    
+    df <- df %>% mutate(altura = ifelse(is.na(ed_altura) | as.numeric(ed_altura) < 2, 3, as.numeric(ed_altura))) %>% filter(as.numeric(st_area(.)) > 15) %>% mutate(cor_hex = case_when(altura < 10 ~ "#fcfdbf", altura < 25 ~ "#fc8961", altura < 50 ~ "#b73779", TRUE ~ "#51127c")) %>% select(ed_id, altura, cor_hex, geometry)
   } else if (tipo == "infra" || tipo == "ambiental") {
     cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_encoding_uso(df[[c]])
     df$cor_hex <- if(tipo=="ambiental") "#27AE60" else "#999999"
@@ -91,7 +112,7 @@ prep_data <- function(path, tipo) {
     df$cor_hex <- if(!is.null(cores[[tipo]])) cores[[tipo]] else "#999999"
     cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_utf8(df[[c]])
   }
-  return(sf_geojson(df))
+  return(sf_geojson(df, digits = 6))
 }
 
 # LEITURA DE ARQUIVOS
@@ -104,6 +125,8 @@ json_piu  <- prep_data("data/processed/layer_piu.rds", "piu")
 json_tri  <- prep_data("data/processed/layer_triangulo.rds", "triangulo")
 json_dist <- prep_data("data/processed/layer_distritos.rds", "distrito")
 json_estab <- prep_data("data/processed/estabelecimentos_enriquecido.gpkg", "estabelecimentos")
+json_iptu  <- prep_data("data/processed/layer_iptu.rds", "iptu_points")
+json_tomb_geral <- prep_data("data/processed/layer_tombados.rds", "tomb_geral") 
 json_tomb_status <- prep_data("data/processed/layer_tombados.rds", "tomb_status")
 json_tomb_orgao  <- prep_data("data/processed/layer_tombados.rds", "tomb_orgao")
 json_fav  <- prep_data("data/processed/layer_favela.rds", "favela")
@@ -156,20 +179,26 @@ logic_amb   <- ""; if(file.exists("assets/modules/logic_amb.js")) logic_amb <- p
 logic_infra <- ""; if(file.exists("assets/modules/logic_infra.js")) logic_infra <- paste(readLines("assets/modules/logic_infra.js", warn=FALSE), collapse = "\n")
 logic_socio <- ""; if(file.exists("assets/modules/logic_socio.js")) logic_socio <- paste(readLines("assets/modules/logic_socio.js", warn=FALSE), collapse = "\n")
 
-# --- CONSTRUÇÃO DOS METADADOS (CORRIGIDOS) ---
 metadata_js_content <- '
 const LAYER_DATA = {
     "estab": {
-        title: "Estabelecimentos",
+        title: "Usos dos Estabelecimentos",
         source: "RAIS",
         year: "2024",
         desc: "Localização de estabelecimentos comerciais e de serviços."
+    },
+    "iptu": { 
+        title: "Características dos Imóveis", 
+        source: "IPTU", 
+        year: "2025", 
+        desc: "Pontos localizados com base na geocodificação do IPTU 2025." 
     },
     "socio_dens": { title: "Densidade Demográfica", source: "Censo IBGE", year: "2022", desc: "Habitantes por km²." },
     "socio_pop": { title: "População Absoluta", source: "Censo IBGE", year: "2022", desc: "Total de habitantes." },
     "socio_dom": { title: "Total de Domicílios", source: "Censo IBGE", year: "2022", desc: "Total de domicílios particulares." },
     "uso": { title: "Uso do Solo", source: "GeoSampa", year: "2021", desc: "Classificação do uso predominante do lote." },
-    "tomb_status": { title: "Bens Tombados (Status)", source: "GeoSampa", year: "2024", desc: "Imóveis com processo de tombamento." },
+    "tomb_geral": { title: "Bens Tombados (Geral)", source: "GeoSampa", year: "2024", desc: "Todos os imóveis com proteção de patrimônio." },
+    "tomb_status": { title: "Bens Tombados (Status)", source: "GeoSampa", year: "2024", desc: "Imóveis classificados por estágio de tombamento." },
     "tomb_orgao": { title: "Bens Tombados (Jurisdição)", source: "GeoSampa", year: "2024", desc: "Órgão responsável pelo tombamento." },
     "fav": { title: "Favelas", source: "HabitaSampa", year: "2024", desc: "Perímetros de favelas." },
     "cort": { title: "Cortiços", source: "HabitaSampa", year: "2024", desc: "Locais identificados como cortiços." },
@@ -198,9 +227,7 @@ html_content <- paste0('
 <div id="map"></div>
 <div id="loader"><div class="spinner"></div> Carregando dados...</div>
 
-<div id="selection-box" class="selection-box"></div>
-
-<div id="results-card" class="results-card" style="display: none;">
+<div id="results-card" class="results-card" style="display: none; position: absolute; top: 360px; right: 50px; z-index: 1000;">
     <div class="resizer resizer-t"></div>
     <div class="resizer resizer-r"></div>
     <div class="resizer resizer-b"></div>
@@ -211,11 +238,11 @@ html_content <- paste0('
     <div class="resizer resizer-br"></div>
 
     <div class="results-header">
-        <span style="font-weight:bold;">Itens Selecionados</span>
+        <span style="font-weight:bold;">Itens na Área Selecionada</span>
         <span class="close-results" onclick="closeResults()">✕</span>
     </div>
-    <div id="results-content" class="results-content">
-        <p style="color:#777; font-size:12px;">Desenhe uma área no mapa para ver a contagem.</p>
+    <div id="results-content" class="results-content" style="max-height: 50vh; overflow-y: auto; overflow-x: hidden; padding-right: 5px;">
+        <p style="color:#777; font-size:12px;">Clique na ferramenta de seleção e desenhe no mapa.</p>
     </div>
 </div>
 
@@ -228,28 +255,37 @@ html_content <- paste0('
 </div>
 
 <div id="sidebar" class="map-overlay">
-    <div id="sidebar-toggle">«</div>
-    <div class="shortcuts-container">
-        <div class="shortcut-title">Pontos de Interesse</div>
-        <button class="scroll-btn btn-left" onclick="scrollShortcuts(-1)">‹</button>
-        <button class="scroll-btn btn-right" onclick="scrollShortcuts(1)">›</button>
-        <div class="shortcuts-wrapper">
-            <div class="shortcuts-list" id="shortcuts-list">
-                <button class="chip-btn" onclick="flyToLocation(-23.546, -46.638, 17.5, 60, -20, \'Edifício Matarazzo\', this)">Edif. Matarazzo</button>
-                <button class="chip-btn" onclick="flyToLocation(-23.547, -46.638, 17.5, 60, 45, \'Viaduto do Chá\', this)">Viaduto do Chá</button>
-                <button class="chip-btn" onclick="flyToLocation(-23.551, -46.634, 17.5, 60, 0, \'Catedral da Sé\', this)">Catedral da Sé</button>
-                <button class="chip-btn" onclick="flyToLocation(-23.536, -46.636, 17, 50, 0, \'Praça da Luz\', this)">Praça da Luz</button>
-                <button class="chip-btn" onclick="flyToLocation(-23.543, -46.642, 17, 60, 45, \'Praça da República\', this)">Praça da República</button>
-                <button class="chip-btn" onclick="flyToLocation(-23.540, -46.649, 17, 60, 0, \'Largo da Santa Cecília\', this)">Largo Santa Cecília</button>
-                <button class="chip-btn" onclick="flyToLocation(-23.5422, -46.6167, 17, 60, -20, \'Largo da Concórdia\', this)">Largo da Concórdia</button>
-            </div>
-        </div>
-    </div>
+    <button id="sidebar-toggle" title="Ocultar/Mostrar Painel">❮</button>
 
     <div class="search-container">
         <input type="text" id="search-input" class="search-input" placeholder="Buscar endereço..." autocomplete="off">
         <div class="icon-container"><span id="clear-btn" class="search-clear">✕</span><span class="search-icon">🔍</span></div>
         <div id="suggestions" class="suggestions-list"></div>
+    </div>
+    
+    <div class="panel-section-header" onclick="toggleSection(\'pontos-interesse-body\', this)">
+        <span style="flex-grow: 1;">PONTOS DE INTERESSE</span>
+        <div class="scroll-buttons-container" style="display: flex; gap: 4px; margin-right: 10px;">
+            <button class="header-scroll-btn" onclick="event.stopPropagation(); scrollShortcuts(-1)">‹</button>
+            <button class="header-scroll-btn" onclick="event.stopPropagation(); scrollShortcuts(1)">›</button>
+        </div>
+        <span class="toggle-icon">▼</span>
+    </div>
+    
+    <div id="pontos-interesse-body" class="panel-section-content" style="display: block;">
+        <div class="shortcuts-container">
+            <div class="shortcuts-wrapper">
+                <div class="shortcuts-list" id="shortcuts-list">
+                    <button class="chip-btn" onclick="flyToLocation(-23.546, -46.638, 17.5, 60, -20, \'Edifício Matarazzo\', this)">Edif. Matarazzo</button>
+                    <button class="chip-btn" onclick="flyToLocation(-23.547, -46.638, 17.5, 60, 45, \'Viaduto do Chá\', this)">Viaduto do Chá</button>
+                    <button class="chip-btn" onclick="flyToLocation(-23.551, -46.634, 17.5, 60, 0, \'Catedral da Sé\', this)">Catedral da Sé</button>
+                    <button class="chip-btn" onclick="flyToLocation(-23.536, -46.636, 17, 50, 0, \'Praça da Luz\', this)">Praça da Luz</button>
+                    <button class="chip-btn" onclick="flyToLocation(-23.543, -46.642, 17, 60, 45, \'Praça da República\', this)">Praça da República</button>
+                    <button class="chip-btn" onclick="flyToLocation(-23.540, -46.649, 17, 60, 0, \'Largo da Santa Cecília\', this)">Largo Santa Cecília</button>
+                    <button class="chip-btn" onclick="flyToLocation(-23.5422, -46.6167, 17, 60, -20, \'Largo da Concórdia\', this)">Largo da Concórdia</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="tabs-header">
@@ -270,12 +306,15 @@ html_content <- paste0('
 
         <div id="tab-uso" class="tab-pane active">
             <button class="btn-clear" onclick="clearCurrentTab()">🗑️ Desmarcar todos</button>
-            <span class="group-title">Ocupação Formal</span>
+            <span class="group-title">Ocupação do Solo</span>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'uso\')">!</span><label>🎨 Uso do Solo</label> <input type="checkbox" id="chk-uso" onchange="toggleL(\'uso\')"></div>
+            
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'tomb_geral\')">!</span><label>🏛️ Bens Tombados (Área Geral)</label> <input type="checkbox" id="chk-tomb_geral" onchange="toggleL(\'tomb_geral\')"></div>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'tomb_status\')">!</span><label>🏛️ Bens Tombados (Por Status)</label> <input type="checkbox" id="chk-tomb_status" onchange="toggleL(\'tomb_status\')"></div>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'tomb_orgao\')">!</span><label>🏛️ Bens Tombados (Por Jurisdição)</label> <input type="checkbox" id="chk-tomb_orgao" onchange="toggleL(\'tomb_orgao\')"></div>
             
-            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'estab\')">!</span><label>🏪 Estabelecimentos</label> <input type="checkbox" id="chk-estab" onchange="toggleL(\'estab\')"></div>
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'estab\')">!</span><label>🏪 Usos dos Estabelecimentos</label> <input type="checkbox" id="chk-estab" onchange="toggleL(\'estab\')"></div>
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'iptu\')">!</span><label>📍 Características dos Imóveis</label> <input type="checkbox" id="chk-iptu" onchange="toggleL(\'iptu\')"></div>
             
             <span class="group-title">Habitação Precária</span>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'fav\')">!</span><label>🟧 Favelas</label> <input type="checkbox" id="chk-fav" onchange="toggleL(\'fav\')"></div>
@@ -297,38 +336,84 @@ html_content <- paste0('
         </div>
     </div>
 
-    <div class="fixed-layers">
-        <span class="group-title" style="margin-top:0; margin-bottom:10px;">Camadas de Referência</span>
-        <div class="layer-item"><label>🏢 Edificações 3D</label> <input type="checkbox" checked id="chk-edif" onchange="toggleL(\'edif\')"></div>
-        <div class="layer-item"><label>🔴 Perímetro PIU</label> <input type="checkbox" checked id="chk-piu" onchange="toggleL(\'piu\')"></div>
-        <div class="layer-item"><label>⚫ Triângulo Histórico</label> <input type="checkbox" id="chk-tri" onchange="toggleL(\'tri\')"></div>
-        <div class="layer-item"><label>🟣 Distritos</label> <input type="checkbox" id="chk-dist" onchange="toggleL(\'dist\')"></div>
-        
-        <hr style="border:0; border-top:1px solid #eee; margin: 12px 0;">
-        <span class="control-label">Perspectiva</span>
-        <div class="btn-group">
-            <button class="view-btn" onclick="map.easeTo({pitch: 0})">2D</button>
-            <button class="view-btn" onclick="map.easeTo({pitch: 60})">3D</button>
+    <div class="panel-section-header" onclick="toggleSection(\'referencias-body\', this)" style="border-top: 1px solid #eee;">
+        <span>VISUALIZAÇÃO E CAMADAS-BASE</span><span class="toggle-icon">▼</span>
+    </div>
+    <div id="referencias-body" class="panel-section-content" style="display: block;">
+        <div class="fixed-layers">
+            <span class="group-title" style="margin-top:0; margin-bottom:10px;">Camadas de Referência</span>
+            <div class="layer-item"><label>🏢 Edificações 3D</label> <input type="checkbox" checked id="chk-edif" onchange="toggleL(\'edif\')"></div>
+            <div class="layer-item"><label>🔴 Perímetro PIU</label> <input type="checkbox" checked id="chk-piu" onchange="toggleL(\'piu\')"></div>
+            <div class="layer-item"><label>⚫ Triângulo Histórico</label> <input type="checkbox" id="chk-tri" onchange="toggleL(\'tri\')"></div>
+            <div class="layer-item"><label>🟣 Distritos</label> <input type="checkbox" id="chk-dist" onchange="toggleL(\'dist\')"></div>
+            
+            <hr style="border:0; border-top:1px solid #eee; margin: 12px 0;">
+            <span class="control-label">Perspectiva</span>
+            <div class="btn-group">
+                <button class="view-btn" onclick="map.easeTo({pitch: 0})">2D</button>
+                <button class="view-btn" onclick="map.easeTo({pitch: 60})">3D</button>
+            </div>
+            <span class="control-label">Base do Mapa</span>
+            <div class="btn-group">
+                <button id="btn-mapa" class="view-btn active" onclick="setStyle(\'default\')">Mapa</button>
+                <button id="btn-satelite" class="view-btn" onclick="setStyle(\'satellite\')">Satélite</button>
+            </div>
         </div>
-        <span class="control-label">Base do Mapa</span>
-        <div class="btn-group">
-            <button id="btn-mapa" class="view-btn active" onclick="setStyle(\'default\')">Mapa</button>
-            <button id="btn-satelite" class="view-btn" onclick="setStyle(\'satellite\')">Satélite</button>
+    </div>
+    
+    <div class="logos-footer">
+        <img src="regua_logos.png" alt="Logos Parceiros">
+    </div>
+
+</div>
+
+<div id="legenda-altura" class="legend-container" style="position: absolute; top: 15px; right: 50px; z-index: 1000;">
+    <div class="legend-title">Altura da Edificação (m)</div>
+    <div style="background: linear-gradient(to right, #fcfdbf, #fc8961, #b73779, #51127c); height: 8px; width: 100%; margin:5px 0; border-radius:4px;"></div>
+    <div style="display:flex; justify-content:space-between; font-size:9px; color:#666;"><span>Térreo</span><span>+50m</span></div>
+</div>
+
+<div id="legenda-iptu-explica" class="legend-container" style="position: absolute; top: 90px; right: 50px; width: 260px; display: none; z-index: 1000;">
+    <div class="legend-title">Metodologia de Agrupamento</div>
+    <div style="font-size:10px; color:#555; line-height:1.4;">
+        <div style="margin-bottom:6px; border-bottom:1px solid #eee; padding-bottom:4px;">
+            <strong>Cálculo dos Indicadores:</strong>
+            <ul style="margin: 4px 0 0 15px; padding:0;">
+                <li>🏢 <b>Unidades:</b> Contagem total de registros.</li>
+                <li>🏗️ <b>Área Constr.:</b> Soma total das unidades.</li>
+                <li>📐 <b>Terreno:</b> Valor máximo (área do lote).</li>
+                <li>⬆️ <b>Pavimentos:</b> Valor máximo (altura).</li>
+            </ul>
+        </div>
+        <div class="legend-title" style="margin-top:8px; margin-bottom:4px;">Precisão da Geolocalização</div>
+        <div style="margin-bottom:2px;"><span style="color:#27AE60; font-weight:bold;">● Exata:</span> Endereço único e exato.</div>
+        <div style="margin-bottom:2px;"><span style="color:#F39C12; font-weight:bold;">● Aglomerado:</span> Múltiplos endereços em 1 ponto.</div>
+        <div><span style="color:#E74C3C; font-weight:bold;">● Aproximada:</span> Número não localizado.</div>
+    </div>
+</div>
+
+<div id="legenda-estab-explica" class="legend-container" style="position: absolute; top: 90px; right: 50px; width: 220px; display: none; z-index: 1000;">
+    <div class="legend-title">Precisão da Localização</div>
+    <div style="font-size:10px; color:#555; line-height:1.4;">
+        <div style="margin-bottom:4px;">
+            <span style="color:#1ABC9C; font-weight:bold;">● Exata:</span><br>
+            Localizado no número predial correto.
+        </div>
+        <div style="margin-bottom:4px;">
+            <span style="color:#FFD700; font-weight:bold;">● Aproximada:</span><br>
+            Número estimado por interpolação.
+        </div>
+        <div>
+            <span style="color:#E74C3C; font-weight:bold;">● Genérica:</span><br>
+            Posicionado no centro da rua ou bairro.
         </div>
     </div>
 </div>
 
-<div id="nota-sobreposicao" class="note-container">
-    <div style="margin-bottom:8px; line-height:1.3;">
-        <span class="note-icon" style="font-size:14px;">📍</span> <b>Pontos Sobrepostos:</b><br>
-        Indicam múltiplos estabelecimentos no mesmo local.
-    </div>
-    <div style="border-top: 1px dashed #bbb; padding-top:6px; margin-top:6px; line-height:1.2;">
-        <span class="note-icon" style="font-size:14px;">🎯</span> <b>Verifique a Precisão:</b><br>
-        <span style="font-size:10px; color:#333;">Clique no ponto para saber se a localização é <b>Exata</b> ou <b>Aproximada</b>.</span>
-    </div>
+<div id="legenda-tomb-geral" class="legend-container" style="display: none;">
+    <div class="legend-title">Bens Tombados</div>
+    <div class="leg-item"><span style="background:#8E44AD;"></span>Área Protegida / Tombada</div>
 </div>
-
 <div id="legenda-uso" class="legend-container"><div class="legend-title">Uso Predominante (Top 10)</div>', legenda_uso_html, '</div>
 <div id="legenda-tomb-status" class="legend-container"><div class="legend-title">Tombamento (Status)</div>', legenda_tomb_status_html, '</div>
 <div id="legenda-tomb-orgao" class="legend-container"><div class="legend-title">Tombamento (Jurisdição)</div>', legenda_tomb_orgao_html, '</div>
@@ -340,10 +425,6 @@ html_content <- paste0('
     <div class="leg-item"><span style="background:#984ea3;"></span>Cortiços</div>
     <div class="leg-item"><span style="background:#33a02c;"></span>Loteamentos</div>
 </div>
-<div id="legenda-altura" class="legend-container"><div class="legend-title">Altura da Edificação (m)</div>
-    <div style="background: linear-gradient(to right, #fcfdbf, #fc8961, #b73779, #51127c); height: 8px; width: 100%; margin:5px 0; border-radius:4px;"></div>
-    <div style="display:flex; justify-content:space-between; font-size:9px; color:#666;"><span>Térreo</span><span>+50m</span></div>
-</div>
 
 <script>
     ', metadata_js_content, '
@@ -351,8 +432,9 @@ html_content <- paste0('
     var data = {
         socio_dens: ', json_socio_dens, ', socio_pop: ', json_socio_pop, ', socio_dom: ', json_socio_dom, ',
         piu: ', json_piu, ', tri: ', json_tri, ', dist: ', json_dist, ', edif: ', json_edif, ', 
-        tomb_status: ', json_tomb_status, ', tomb_orgao: ', json_tomb_orgao, ', 
-        uso: ', json_uso, ', estab: ', json_estab, ', fav: ', json_fav, ', cort: ', json_cort, ', lote: ', json_lote, ',
+        tomb_geral: ', json_tomb_geral, ', tomb_status: ', json_tomb_status, ', tomb_orgao: ', json_tomb_orgao, ', 
+        uso: ', json_uso, ', estab: ', json_estab, ', iptu: ', json_iptu, ',
+        fav: ', json_fav, ', cort: ', json_cort, ', lote: ', json_lote, ',
         parques: ', json_parques, ', pracas: ', json_pracas, ', arvores: ', json_arvores, ',
         ', infra_js_data, '
     };
@@ -367,4 +449,10 @@ html_content <- paste0('
 ')
 
 write(html_content, "outputs/mapa.html")
+
+# Copia para outputs para funcionar localmente no seu computador
+if (file.exists("www/regua_logos.png")) {
+  file.copy("www/regua_logos.png", "outputs/regua_logos.png", overwrite=TRUE)
+}
+
 print(">>> MAPA TPC GERADO COM SUCESSO: outputs/mapa.html")

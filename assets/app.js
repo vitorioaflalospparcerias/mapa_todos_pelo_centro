@@ -10,7 +10,6 @@ var map = new maplibregl.Map({
 
 map.addControl(new maplibregl.NavigationControl(), "top-right");
 
-// BOTÕES CUSTOMIZADOS
 class HomeButton {
     onAdd(map) {
         this.container = document.createElement('div');
@@ -29,12 +28,12 @@ class SelectButton {
         this.btn = document.createElement('button');
         this.btn.type = 'button';
         this.btn.id = 'btn-selection-tool';
-        this.btn.title = 'Selecionar Área (Ative uma camada para usar)';
+        this.btn.title = 'Desenhar Área Livre (Laço)';
         this.btn.style.fontSize = '18px';
         this.btn.style.cursor = 'pointer';
-        this.btn.innerHTML = '⛝'; 
+        this.btn.innerHTML = '✏️'; 
         this.btn.onclick = () => { toggleSelectMode(this.btn); };
-        this.btn.classList.add('btn-disabled'); // Começa desabilitado
+        this.btn.classList.add('btn-disabled'); 
         this.container.appendChild(this.btn);
         return this.container;
     }
@@ -43,7 +42,31 @@ class SelectButton {
 
 map.addControl(new HomeButton(), "top-right");
 map.addControl(new SelectButton(), "top-right");
-map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
+
+// A escala agora fica no bottom-right, liberando a visão onde estava
+map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
+
+// --- LÓGICA DE ABRIR/FECHAR O PAINEL E SUAS SEÇÕES ---
+const sidebar = document.getElementById('sidebar');
+const toggleBtn = document.getElementById('sidebar-toggle');
+toggleBtn.addEventListener('click', () => { 
+    sidebar.classList.toggle('collapsed'); 
+    toggleBtn.innerHTML = sidebar.classList.contains('collapsed') ? '❯' : '❮'; 
+});
+
+window.toggleSection = function(bodyId, headerEl) {
+    var content = document.getElementById(bodyId);
+    var icon = headerEl.querySelector('.toggle-icon');
+    if (content.style.display === "none") {
+        content.style.display = "block";
+        icon.innerHTML = "▼";
+        headerEl.classList.remove('closed');
+    } else {
+        content.style.display = "none";
+        icon.innerHTML = "▶";
+        headerEl.classList.add('closed');
+    }
+};
 
 // --- LÓGICA DE REDIMENSIONAMENTO MANUAL ---
 function makeResizable(div) {
@@ -89,274 +112,313 @@ function makeResizable(div) {
     });
 }
 
-// --- LÓGICA DE SELEÇÃO ---
+// --- LÓGICA DE SELEÇÃO LIVRE (LASSO) ---
 let isSelecting = false;
-let startPoint = null;
-let currentPoint = null;
-let boxElement = document.getElementById('selection-box');
+let isDrawing = false;
+let lassoPolygon = []; 
+let lassoPixels = [];  
 let resultsElement = document.getElementById('results-card');
 let resultsContent = document.getElementById('results-content');
 let selectBtnRef = null;
 
-// Inicializa redimensionamento
 makeResizable(resultsElement);
 
+map.on('load', () => {
+    map.addSource('lasso-source', {
+        'type': 'geojson',
+        'data': { 'type': 'Feature', 'geometry': { 'type': 'Polygon', 'coordinates': [[]] } }
+    });
+    map.addLayer({ 'id': 'lasso-fill', 'type': 'fill', 'source': 'lasso-source', 'paint': { 'fill-color': '#2F80ED', 'fill-opacity': 0.3 } });
+    map.addLayer({ 'id': 'lasso-line', 'type': 'line', 'source': 'lasso-source', 'paint': { 'line-color': '#2F80ED', 'line-width': 2, 'line-dasharray': [2, 2] } });
+});
+
 function toggleSelectMode(btn) {
-    if (btn.classList.contains('btn-disabled')) return; // Bloqueia se desabilitado
+    if (btn.classList.contains('btn-disabled')) return; 
 
     isSelecting = !isSelecting;
     selectBtnRef = btn;
+    
     if (isSelecting) {
         btn.classList.add('select-btn-active');
         map.getCanvas().style.cursor = 'crosshair';
-        map.dragPan.disable();
+        map.dragPan.disable(); 
         resultsElement.style.display = 'none';
+        clearLasso();
     } else {
         btn.classList.remove('select-btn-active');
         map.getCanvas().style.cursor = '';
         map.dragPan.enable();
-        boxElement.style.display = 'none';
+        clearLasso();
     }
 }
 
-// Verifica se há camadas de dados ativas para habilitar o botão
+function clearLasso() {
+    lassoPolygon = [];
+    lassoPixels = [];
+    if (map.getSource('lasso-source')) {
+        map.getSource('lasso-source').setData({ 'type': 'Feature', 'geometry': { 'type': 'Polygon', 'coordinates': [[]] } });
+    }
+}
+
+function updateLassoRender() {
+    if (lassoPolygon.length < 3) return;
+    let closedPoly = [...lassoPolygon, lassoPolygon[0]];
+    map.getSource('lasso-source').setData({ 'type': 'Feature', 'geometry': { 'type': 'Polygon', 'coordinates': [closedPoly] } });
+}
+
+map.on('mousedown', (e) => {
+    if (!isSelecting) return;
+    isDrawing = true;
+    clearLasso();
+    lassoPolygon.push([e.lngLat.lng, e.lngLat.lat]);
+    lassoPixels.push([e.point.x, e.point.y]);
+});
+
+map.on('mousemove', (e) => {
+    if (!isSelecting || !isDrawing) return;
+    lassoPolygon.push([e.lngLat.lng, e.lngLat.lat]);
+    lassoPixels.push([e.point.x, e.point.y]);
+    updateLassoRender();
+});
+
+map.on('mouseup', (e) => {
+    if (!isSelecting || !isDrawing) return;
+    isDrawing = false;
+    if (lassoPolygon.length > 3) { finishLassoSelection(); } else { clearLasso(); }
+    toggleSelectMode(selectBtnRef); 
+});
+
+function isLeft(P0, P1, P2) { return ((P1[0] - P0[0]) * (P2[1] - P0[1]) - (P2[0] - P0[0]) * (P1[1] - P0[1])); }
+
+function pointInPolygon(point, vs) {
+    let wn = 0; 
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        if (vs[j][1] <= point[1]) {
+            if (vs[i][1] > point[1]) { if (isLeft(vs[j], vs[i], point) > 0) wn++; }
+        } else {
+            if (vs[i][1] <= point[1]) { if (isLeft(vs[j], vs[i], point) < 0) wn--; }
+        }
+    }
+    return wn !== 0; 
+}
+
+function finishLassoSelection() {
+    const xs = lassoPixels.map(p => p[0]);
+    const ys = lassoPixels.map(p => p[1]);
+    const bbox = [ [Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)] ];
+    if (bbox[0][0] === bbox[1][0] || bbox[0][1] === bbox[1][1]) return;
+    
+    const rawFeatures = map.queryRenderedFeatures(bbox);
+    const featuresDentro = rawFeatures.filter(f => {
+        if (!f.geometry) return false;
+        if (f.geometry.type === 'Point') {
+            return pointInPolygon(f.geometry.coordinates, lassoPolygon);
+        } else if (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon') {
+            let samplePoint = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0][0] : f.geometry.coordinates[0][0][0];
+            return pointInPolygon(samplePoint, lassoPolygon);
+        }
+        return false;
+    });
+
+    calculateStats(featuresDentro);
+}
+
 function checkSelectButton() {
     const btn = document.getElementById('btn-selection-tool');
     if (!btn) return;
-
     let allDataLayers = [];
-    for (let key in layersByTab) {
-        allDataLayers = allDataLayers.concat(layersByTab[key]);
-    }
-
+    for (let key in layersByTab) { allDataLayers = allDataLayers.concat(layersByTab[key]); }
     let hasActiveLayer = allDataLayers.some(id => {
-        // Ignora densidade demográfica (socio_dens) para ativação do botão
         if (id === 'socio_dens') return false;
         return map.getLayer(id) && map.getLayoutProperty(id, 'visibility') === 'visible';
     });
 
     if (hasActiveLayer) {
         btn.classList.remove('btn-disabled');
-        btn.title = 'Selecionar Área';
+        btn.title = 'Selecionar Área Livre';
     } else {
         btn.classList.add('btn-disabled');
         btn.title = 'Ative uma camada para usar a seleção';
-        
-        // --- CORREÇÃO DO BUG ---
-        // Se desabilitar, FORÇA SAÍDA do modo de seleção IMEDIATAMENTE
         isSelecting = false; 
         if(selectBtnRef) selectBtnRef.classList.remove('select-btn-active');
         map.getCanvas().style.cursor = '';
         map.dragPan.enable();
-        boxElement.style.display = 'none';
-        
+        clearLasso();
         closeResults();
     }
 }
 
-map.on('mousedown', (e) => {
-    if (!isSelecting) return;
-    startPoint = e.point;
-    currentPoint = e.point;
-    boxElement.style.display = 'block';
-    updateBox();
-});
-
-map.on('mousemove', (e) => {
-    if (!isSelecting || !startPoint) return;
-    currentPoint = e.point;
-    updateBox();
-});
-
-map.on('mouseup', (e) => {
-    if (!isSelecting || !startPoint) return;
-    finishSelection(startPoint, e.point);
-    startPoint = null;
-    currentPoint = null;
-    boxElement.style.display = 'none';
-    toggleSelectMode(selectBtnRef); 
-});
-
-function updateBox() {
-    const minX = Math.min(startPoint.x, currentPoint.x);
-    const maxX = Math.max(startPoint.x, currentPoint.x);
-    const minY = Math.min(startPoint.y, currentPoint.y);
-    const maxY = Math.max(startPoint.y, currentPoint.y);
-    boxElement.style.left = minX + 'px';
-    boxElement.style.top = minY + 'px';
-    boxElement.style.width = (maxX - minX) + 'px';
-    boxElement.style.height = (maxY - minY) + 'px';
-}
-
-function finishSelection(p1, p2) {
-    if (Math.abs(p1.x - p2.x) < 5 && Math.abs(p1.y - p2.y) < 5) return;
-    const bbox = [[Math.min(p1.x, p2.x), Math.min(p1.y, p2.y)], [Math.max(p1.x, p2.x), Math.max(p1.y, p2.y)]];
-    const features = map.queryRenderedFeatures(bbox);
-    calculateStats(features);
-}
-
+// --- CÁLCULOS ESTATÍSTICOS COM FLEXBOX E TEXTO QUEBRADO ---
 function calculateStats(features) {
     const stats = {};
     const staticLabels = { 
-        'estab':'Estabelecimentos', 
+        'estab':'Usos dos Estabelecimentos', 
+        'iptu':'Características dos Imóveis',
         'fav':'Favelas', 'cort':'Cortiços', 'lote':'Loteamentos', 
         'parques':'Parques', 'pracas':'Praças', 'arvores':'Árvores', 
-        'tomb_status':'Bens Tombados',
+        'tomb_geral': 'Bens Tombados (Área Geral)',
+        'tomb_status':'Bens Tombados (Por Status)',
         'uso': 'Uso do Solo',
-        'tomb_orgao': 'Tombamento (Jurisdição)',
-        // Não precisamos de map para pop/dom aqui pq tratamos separado
+        'tomb_orgao': 'Bens Tombados (Jurisdição)',
     };
     
-    // VARIÁVEIS PARA SOMA
-    let sumPop = 0;
-    let sumDom = 0;
-    let hasSocioPop = false;
-    let hasSocioDom = false;
-    let processedIds = new Set(); // Para evitar somar o mesmo polígono 2x se ele estiver em 2 tiles
+    let sumPop = 0; let sumDom = 0; let hasSocioPop = false; let hasSocioDom = false;
+    let iptuStats = { count: 0, sumAreaConst: 0, sumAreaTerr: 0, sumPav: 0 };
+    let terrenosAgrupados = new Map(); 
+    let hasIptu = false;
+    let processedIds = new Set(); 
 
     features.forEach(f => {
         const layerId = f.layer.id;
-        
-        // Ignora densidade demográfica
         if (layerId === 'socio_dens') return;
 
-        // LÓGICA DE SOMA (População e Domicílios)
+        const uniqueId = layerId + '_' + JSON.stringify(f.geometry.coordinates) + '_' + JSON.stringify(f.properties);
+
         if (layerId === 'socio_pop' || layerId === 'socio_dom') {
-            // Cria ID único baseado nas coordenadas ou ID da feature para deduplicar
-            // (Tiles cortam polígonos, queryRenderedFeatures pode pegar pedaços)
-            // Se o GeoJSON tiver IDs é melhor, senão usamos string da geometria
-            const uniqueId = layerId + '_' + (f.id || JSON.stringify(f.geometry.coordinates[0][0])); 
-            
             if (!processedIds.has(uniqueId)) {
                 processedIds.add(uniqueId);
-                
-                // Pega valor numérico das propriedades
-                if (layerId === 'socio_pop') { 
-                    sumPop += (f.properties.populacao || 0); 
-                    hasSocioPop = true; 
-                }
-                if (layerId === 'socio_dom') { 
-                    sumDom += (f.properties.domicilios || 0); 
-                    hasSocioDom = true; 
-                }
+                if (layerId === 'socio_pop') { sumPop += (f.properties.populacao || 0); hasSocioPop = true; }
+                if (layerId === 'socio_dom') { sumDom += (f.properties.domicilios || 0); hasSocioDom = true; }
             }
-            return; // Pula resto da lógica para essas camadas
+            return; 
+        }
+
+        if (layerId === 'iptu') {
+            if (!processedIds.has(uniqueId)) {
+                processedIds.add(uniqueId);
+                hasIptu = true;
+                iptuStats.count++;
+                iptuStats.sumAreaConst += (parseFloat(f.properties.area_construida) || 0);
+                
+                const coordKey = JSON.stringify(f.geometry.coordinates);
+                const currTerr = parseFloat(f.properties.area_terreno) || 0;
+                const currPav = parseFloat(f.properties.num_pavimentos) || 0;
+                
+                if (!terrenosAgrupados.has(coordKey)) { terrenosAgrupados.set(coordKey, { terr: currTerr, pav: currPav }); } 
+                else { let existing = terrenosAgrupados.get(coordKey); terrenosAgrupados.set(coordKey, { terr: Math.max(existing.terr, currTerr), pav: Math.max(existing.pav, currPav) }); }
+            }
+            return;
         }
 
         let groupName = null;
-        if (typeof infraLabels !== 'undefined' && infraLabels[layerId]) {
-            groupName = infraLabels[layerId];
-        } else if (staticLabels[layerId]) {
-            groupName = staticLabels[layerId];
-        }
+        if (typeof infraLabels !== 'undefined' && infraLabels[layerId]) groupName = infraLabels[layerId];
+        else if (staticLabels[layerId]) groupName = staticLabels[layerId];
 
         if (groupName) {
             if (!stats[layerId]) stats[layerId] = { name: groupName, count: 0, items: [] };
-            stats[layerId].items.push(f);
+            stats[layerId].items.push(f); 
         }
     });
 
     let html = '';
     let foundAny = false;
 
-    // 1. EXIBE RESULTADOS SOMA SOCIO
-    if (hasSocioPop) {
+    const renderRow = (name, count, isGray = false) => {
+        const colorStyle = isGray ? 'color: #999;' : '';
+        return `<div class="count-row" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; ${colorStyle}">
+                    <span style="flex: 1; padding-right: 12px; line-height: 1.3; word-break: break-word; white-space: normal;">${name}</span> 
+                    <span style="font-weight: bold; white-space: nowrap;">${count}</span>
+                </div>`;
+    };
+
+    if (hasSocioPop) { foundAny = true; html += `<div class="count-item"><div class="count-title">População Absoluta</div>${renderRow('Total na área', `${sumPop.toLocaleString('pt-BR')} hab`)}</div>`; }
+    if (hasSocioDom) { foundAny = true; html += `<div class="count-item"><div class="count-title">Total de Domicílios</div>${renderRow('Total na área', `${sumDom.toLocaleString('pt-BR')} dom`)}</div>`; }
+
+    if (hasIptu && iptuStats.count > 0) {
         foundAny = true;
-        html += `<div class="count-item"><div class="count-title">População Absoluta</div><div class="count-row"><span>Total na área</span> <span>${sumPop.toLocaleString('pt-BR')} hab</span></div></div>`;
-    }
-    if (hasSocioDom) {
-        foundAny = true;
-        html += `<div class="count-item"><div class="count-title">Total de Domicílios</div><div class="count-row"><span>Total na área</span> <span>${sumDom.toLocaleString('pt-BR')} dom</span></div></div>`;
+        let totalTerr = 0; let sumMaxPavs = 0; let numPredios = terrenosAgrupados.size;
+        terrenosAgrupados.forEach(val => { totalTerr += val.terr; sumMaxPavs += val.pav; });
+        const totalConst = iptuStats.sumAreaConst.toLocaleString('pt-BR', {maximumFractionDigits: 0});
+        const areaTerrLabel = totalTerr.toLocaleString('pt-BR', {maximumFractionDigits: 0});
+        const avgPav = numPredios > 0 ? (sumMaxPavs / numPredios).toFixed(1).replace('.', ',') : 0;
+
+        html += `<div class="count-item"><div class="count-title">Características dos Imóveis (Lotes: ${numPredios} | Regs: ${iptuStats.count})</div>`;
+        html += renderRow('Área Constr. Total', `${totalConst} m²`);
+        html += renderRow('Área de Terreno Total', `${areaTerrLabel} m²`);
+        html += renderRow('Média de Pavimentos', `${avgPav} andares`);
+        html += `</div>`;
     }
 
-    // 2. EXIBE USO DO SOLO (Agrupa por tipo)
     if (stats['uso']) {
         foundAny = true;
-        const usos = stats['uso'].items;
-        const usoCounts = {};
-        const uniqueGeoms = new Set();
-        
-        usos.forEach(f => {
-            // Deduplica geometries
-            const geomKey = JSON.stringify(f.geometry.coordinates);
-            if(!uniqueGeoms.has(geomKey)){
-                uniqueGeoms.add(geomKey);
-                const desc = f.properties.tx_uso_h_p || "Outros";
-                usoCounts[desc] = (usoCounts[desc] || 0) + 1;
-            }
+        const usoCounts = {}; const uniqueGeoms = new Set();
+        stats['uso'].items.forEach(f => {
+            const uniqueId = JSON.stringify(f.geometry.coordinates) + '_' + JSON.stringify(f.properties);
+            if(!uniqueGeoms.has(uniqueId)){ uniqueGeoms.add(uniqueId); const desc = f.properties.tx_uso_h_p || "Outros"; usoCounts[desc] = (usoCounts[desc] || 0) + 1; }
         });
-        
         const sortedUsos = Object.entries(usoCounts).sort((a,b) => b[1] - a[1]);
         html += `<div class="count-item"><div class="count-title">Uso do Solo (Lotes: ${uniqueGeoms.size})</div>`;
-        sortedUsos.slice(0, 10).forEach(([name, count]) => {
-            html += `<div class="count-row"><span>${name}</span> <span>${count}</span></div>`;
-        });
+        sortedUsos.slice(0, 10).forEach(([name, count]) => { html += renderRow(name, count); });
         html += `</div>`;
         delete stats['uso'];
     }
 
-    // 3. EXIBE TOMBAMENTO POR JURISDIÇÃO
     if (stats['tomb_orgao']) {
         foundAny = true;
-        const tombs = stats['tomb_orgao'].items;
-        const tombCounts = {};
-        const uniqueGeoms = new Set();
-
-        tombs.forEach(f => {
-            const geomKey = JSON.stringify(f.geometry.coordinates);
-            if(!uniqueGeoms.has(geomKey)){
-                uniqueGeoms.add(geomKey);
-                const desc = f.properties.jurisdicao || "Outros";
-                tombCounts[desc] = (tombCounts[desc] || 0) + 1;
-            }
+        const tombCounts = {}; const uniqueGeoms = new Set();
+        stats['tomb_orgao'].items.forEach(f => {
+            const uniqueId = JSON.stringify(f.geometry.coordinates) + '_' + JSON.stringify(f.properties);
+            if(!uniqueGeoms.has(uniqueId)){ uniqueGeoms.add(uniqueId); const desc = f.properties.jurisdicao || "Outros"; tombCounts[desc] = (tombCounts[desc] || 0) + 1; }
         });
-
         const sortedTombs = Object.entries(tombCounts).sort((a,b) => b[1] - a[1]);
-        html += `<div class="count-item"><div class="count-title">Tombamento (Jurisdição)</div>`;
-        sortedTombs.forEach(([name, count]) => {
-            html += `<div class="count-row"><span>${name}</span> <span>${count}</span></div>`;
-        });
+        html += `<div class="count-item"><div class="count-title">Bens Tombados (Jurisdição)</div>`;
+        sortedTombs.forEach(([name, count]) => { html += renderRow(name, count); });
         html += `</div>`;
         delete stats['tomb_orgao'];
     }
+    
+    if (stats['tomb_geral']) {
+        foundAny = true;
+        const uniqueGeoms = new Set();
+        stats['tomb_geral'].items.forEach(f => { uniqueGeoms.add(JSON.stringify(f.geometry.coordinates) + '_' + JSON.stringify(f.properties)); });
+        html += `<div class="count-item"><div class="count-title">Bens Tombados (Área Geral)</div>${renderRow('Imóveis/Áreas Protegidas', uniqueGeoms.size)}</div>`;
+        delete stats['tomb_geral'];
+    }
 
-    // 4. EXIBE ESTABELECIMENTOS
     if (stats['estab']) {
         foundAny = true;
-        const estabs = stats['estab'].items;
-        const cnaeCounts = {};
-        estabs.forEach(f => {
-            const desc = f.properties.desc_classe || "Não Informado";
-            cnaeCounts[desc] = (cnaeCounts[desc] || 0) + 1;
+        const cnaeCounts = {}; const uniqueGeoms = new Set();
+        stats['estab'].items.forEach(f => {
+            const uniqueId = JSON.stringify(f.geometry.coordinates) + '_' + JSON.stringify(f.properties);
+            if(!uniqueGeoms.has(uniqueId)){ uniqueGeoms.add(uniqueId); const desc = f.properties.desc_classe || "Não Informado"; cnaeCounts[desc] = (cnaeCounts[desc] || 0) + 1; }
         });
         const sortedCnaes = Object.entries(cnaeCounts).sort((a,b) => b[1] - a[1]);
-        html += `<div class="count-item"><div class="count-title">🏪 Estabelecimentos (Total: ${estabs.length})</div>`;
-        sortedCnaes.slice(0, 10).forEach(([name, count]) => {
-            html += `<div class="count-row"><span>${name.substring(0, 40)}${name.length>40?'...':''}</span> <span>${count}</span></div>`;
-        });
+        html += `<div class="count-item"><div class="count-title">Usos dos Estabelecimentos (Total: ${uniqueGeoms.size})</div>`;
+        sortedCnaes.slice(0, 10).forEach(([name, count]) => { html += renderRow(name, count); });
         if (sortedCnaes.length > 10) {
             const rest = sortedCnaes.slice(10).reduce((acc, curr) => acc + curr[1], 0);
-            html += `<div class="count-row" style="color:#999;"><span>Outros...</span> <span>${rest}</span></div>`;
+            html += renderRow("Outros...", rest, true);
         }
         html += `</div>`;
         delete stats['estab'];
     }
 
-    // 5. RESTO (Infra, Habitação, etc)
-    for (const [id, data] of Object.entries(stats)) {
+    for (const [id, layerData] of Object.entries(stats)) {
         foundAny = true;
-        // Deduplica contagem por geometria
-        const uniqueSet = new Set(data.items.map(f => JSON.stringify(f.geometry.coordinates)));
-        html += `<div class="count-item"><div class="count-title">${data.name}</div><div class="count-row"><span>Quantidade</span> <span>${uniqueSet.size}</span></div></div>`;
+        const registrosUnicos = new Set(layerData.items.map(f => JSON.stringify(f.geometry.coordinates) + '_' + JSON.stringify(f.properties)));
+        const locaisUnicos = new Set(layerData.items.map(f => JSON.stringify(f.geometry.coordinates)));
+        
+        const totalRegistros = registrosUnicos.size; const totalLocais = locaisUnicos.size;
+
+        html += `<div class="count-item"><div class="count-title">${layerData.name}</div>`;
+        if (totalRegistros > totalLocais) {
+            html += renderRow('Locais Físicos', totalLocais);
+            html += `<div class="count-row" style="color:#aaa; font-size:10px; margin-top:-4px;"><span>↳ Total de Equipamentos/Anexos</span> <span>${totalRegistros}</span></div>`;
+        } else {
+            html += renderRow('Quantidade', totalLocais);
+        }
+        html += `</div>`;
     }
 
-    if (!foundAny) html = '<p style="text-align:center; color:#777;">Nenhum item das camadas ativas encontrado nesta área.</p>';
-    
+    if (!foundAny) html = '<p style="text-align:center; color:#777;">Nenhum item encontrado no perímetro desenhado.</p>';
     resultsContent.innerHTML = html;
     resultsElement.style.display = 'flex';
 }
 
-window.closeResults = function() { document.getElementById('results-card').style.display = 'none'; }
+window.closeResults = function() { 
+    document.getElementById('results-card').style.display = 'none'; 
+    clearLasso(); 
+}
 
 // --- UI E POPUPS ---
 var hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10, className: 'tooltip-popup' });
@@ -392,10 +454,6 @@ window.flyToLocation = function(lat, lng, zoom, pitch, bearing, title, btnElemen
 }
 function removePin() { if (currentPin) { currentPin.remove(); currentPin = null; } document.querySelectorAll(".chip-btn").forEach(b => b.classList.remove("active")); }
 
-const sidebar = document.getElementById('sidebar');
-const toggleBtn = document.getElementById('sidebar-toggle');
-toggleBtn.addEventListener('click', () => { sidebar.classList.toggle('collapsed'); toggleBtn.innerHTML = sidebar.classList.contains('collapsed') ? '»' : '«'; });
-
 function setStyle(style) {
     document.getElementById('btn-mapa').classList.remove('active');
     document.getElementById('btn-satelite').classList.remove('active');
@@ -411,7 +469,7 @@ window.toggleCat = function(id) { var content = document.getElementById(id); var
 
 var layersByTab = {
     "tab-socio": ["socio_dens", "socio_pop", "socio_dom"],
-    "tab-uso":   ["uso", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab"], 
+    "tab-uso":   ["uso", "tomb_geral", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab", "iptu"], 
     "tab-amb":   ["parques", "pracas", "arvores"],
     "tab-infra": [ "trans_metro_est", "trans_trem_est", "trans_metro_lin", "trans_trem_lin", "trans_bus_term", "trans_bus_pt", "trans_bike", "infra_abs_bomprato", "infra_abs_feira", "infra_abs_mercado", "infra_abs_sacolao", "infra_soc_equip", "infra_conc_parc", "infra_wifi", "infra_cult_biblio", "infra_cult_espaco", "infra_cult_museu", "infra_cult_teatro", "infra_edu_tecnico", "infra_edu_infantil", "infra_edu_outros", "infra_edu_privada", "infra_edu_publica", "infra_edu_sist_s", "infra_esp_centro", "infra_esp_clube", "infra_esp_cdc", "infra_esp_estadio", "infra_sau_ambul", "infra_sau_hosp", "infra_sau_outros", "infra_sau_mental", "infra_sau_ubs", "infra_sau_dst", "infra_sau_urgencia", "infra_seg_bombeiro", "infra_seg_gcm", "infra_seg_civil", "infra_seg_militar", "infra_serv_consulado", "infra_serv_correios", "infra_serv_poupatempo", "infra_serv_shopping" ]
 };
@@ -432,7 +490,7 @@ function switchTab(tabId, btn) {
         }
     }
     updateLegends(); checkTransparency(); keepLabelsOnTop();
-    checkSelectButton(); // <<< CHECA BOTÃO
+    checkSelectButton(); 
 }
 
 window.clearCurrentTab = function() {
@@ -446,7 +504,7 @@ window.clearCurrentTab = function() {
         if (chk) { chk.checked = false; setLayout(layerId, "none"); }
     });
     updateLegends(); checkTransparency(); keepLabelsOnTop();
-    checkSelectButton(); // <<< CHECA BOTÃO
+    checkSelectButton(); 
 }
 
 function flashLayer(id) {
@@ -474,22 +532,42 @@ function setLayout(id, vis) {
 window.toggleL = function(id) {
     var chk = document.getElementById("chk-" + id);
     if (!chk) return;
+    
     if (chk.checked) {
+        if (id === 'iptu') {
+            const conflictLayers = ["uso", "tomb_geral", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab", "socio_dens", "socio_pop", "socio_dom"];
+            conflictLayers.forEach(otherId => {
+                const otherChk = document.getElementById("chk-" + otherId);
+                if (otherChk && otherChk.checked) {
+                    otherChk.checked = false;
+                    setLayout(otherId, "none");
+                }
+            });
+        } else {
+            const iptuChk = document.getElementById("chk-iptu");
+            if (iptuChk && iptuChk.checked) {
+                iptuChk.checked = false;
+                setLayout("iptu", "none");
+            }
+        }
+
         const socioIds = ['socio_dens', 'socio_pop', 'socio_dom'];
         if (socioIds.includes(id)) {
             const conflict = socioIds.find(otherId => { if (otherId === id) return false; const otherChk = document.getElementById('chk-' + otherId); return otherChk && otherChk.checked; });
             if (conflict) { alert(`Visualização Conflitante!`); chk.checked = false; return; }
         }
-        const tombIds = ['tomb_status', 'tomb_orgao'];
-        if (tombIds.includes(id)) {
-            tombIds.forEach(otherId => { if (otherId !== id) { const otherChk = document.getElementById('chk-' + otherId); if (otherChk && otherChk.checked) { otherChk.checked = false; setLayout(otherId, "none"); } } });
+        
+        if (['tomb_geral', 'tomb_status', 'tomb_orgao'].includes(id)) {
+             const tombIds = ['tomb_geral', 'tomb_status', 'tomb_orgao'];
+             tombIds.forEach(otherId => { if (otherId !== id) { const otherChk = document.getElementById('chk-' + otherId); if (otherChk && otherChk.checked) { otherChk.checked = false; setLayout(otherId, "none"); } } });
         }
     }
+
     var vis = chk.checked ? "visible" : "none";
     setLayout(id, vis);
     if (chk.checked) { flashLayer(id); if (map.getLayer(id + "_l")) flashLayer(id + "_l"); }
     updateLegends(); checkTransparency(); keepLabelsOnTop();
-    checkSelectButton(); // <<< CHECA BOTÃO
+    checkSelectButton(); 
 }
 
 function checkTransparency() {
@@ -501,7 +579,7 @@ function checkTransparency() {
         const infraLayers = layersByTab["tab-infra"];
         if (infraLayers.some(id => document.getElementById("chk-" + id)?.checked)) targetOpacity = 0.15; 
     } else {
-        const groundLayers = ["socio_dens", "socio_pop", "socio_dom", "fav", "cort", "lote", "uso", "parques", "pracas", "arvores", "tomb", "tomb_status", "tomb_orgao", "estab"];
+        const groundLayers = ["socio_dens", "socio_pop", "socio_dom", "fav", "cort", "lote", "uso", "parques", "pracas", "arvores", "tomb_geral", "tomb_status", "tomb_orgao", "estab", "iptu"];
         if (groundLayers.some(id => document.getElementById("chk-" + id)?.checked)) targetOpacity = 0.15;
     }
     map.setPaintProperty('edif', 'fill-extrusion-opacity-transition', { duration: 300 });
@@ -515,6 +593,8 @@ function updateLegends() {
     document.getElementById("legenda-uso").style.display = uso ? "block" : "none";
     var hab = ["chk-fav", "chk-cort", "chk-lote"].some(id => document.getElementById(id)?.checked);
     document.getElementById("legenda-hab").style.display = hab ? "block" : "none";
+    var tGeral = document.getElementById("chk-tomb_geral")?.checked;
+    if(document.getElementById("legenda-tomb-geral")) document.getElementById("legenda-tomb-geral").style.display = tGeral ? "block" : "none";
     var tStatus = document.getElementById("chk-tomb_status")?.checked;
     if(document.getElementById("legenda-tomb-status")) document.getElementById("legenda-tomb-status").style.display = tStatus ? "block" : "none";
     var tOrgao = document.getElementById("chk-tomb_orgao")?.checked;
@@ -525,42 +605,136 @@ function updateLegends() {
     if(document.getElementById("legenda-socio-pop")) document.getElementById("legenda-socio-pop").style.display = socioPop ? "block" : "none";
     var socioDom = document.getElementById("chk-socio_dom")?.checked;
     if(document.getElementById("legenda-socio-dom")) document.getElementById("legenda-socio-dom").style.display = socioDom ? "block" : "none";
+    
     var estab = document.getElementById("chk-estab")?.checked;
-    var note = document.getElementById("nota-sobreposicao");
-    if(note) note.style.display = estab ? "block" : "none";
+    if(document.getElementById("legenda-estab-explica"))
+        document.getElementById("legenda-estab-explica").style.display = estab ? "block" : "none";
+
+    var iptu = document.getElementById("chk-iptu")?.checked;
+    if(document.getElementById("legenda-iptu-explica"))
+        document.getElementById("legenda-iptu-explica").style.display = iptu ? "block" : "none";
 }
 
 function addTooltip(layerId, propName) {
-    if (layerId === 'estab') {
+    if (layerId === 'estab' || layerId === 'iptu') {
         map.on('click', layerId, (e) => {
             if (isSelecting) return;
+            
             const features = map.queryRenderedFeatures(e.point, { layers: [layerId] });
             if (!features.length) return;
+            
             if (currentClickPopup) { currentClickPopup.remove(); currentClickPopup = null; }
-            const dictPrecisao = { "numero": "🟢 Exata", "numero_aproximado": "🟡 Aproximada", "logradouro": "🟠 Rua", "cep": "🔴 Genérica", "localidade": "🔴 Genérica", "municipio": "🔴 Genérica" };
-            let htmlContent = `<div style="border-bottom: 2px solid #1ABC9C; margin-bottom: 8px; font-weight:bold; font-size:12px; color:#1ABC9C; text-transform:uppercase;">ESTABELECIMENTOS NO LOCAL</div><ul style="margin:0; padding-left:0; list-style-type: none;">`;
-            let processedNames = new Set();
+            
+            let headerColor = (layerId === 'estab') ? "#1ABC9C" : "#2980B9"; 
+            let titleText = (layerId === 'estab') ? "USOS DOS ESTABELECIMENTOS" : "CARACTERÍSTICAS DOS IMÓVEIS";
+            const fmt = (n) => n ? parseFloat(n).toLocaleString('pt-BR', {maximumFractionDigits: 0}) : '-';
+
+            let totalUnidades = features.length;
+            let enderecosUnicos = new Set();
+            let areaConstruidaTotal = 0;
+            let areaTerrenoMax = 0;
+            let pavimentosMax = 0;
+            let geocodeScore = 0; 
+            
+            let estabListString = "";
+            let processedItems = new Set(); 
+
             features.forEach(f => {
-                const props = f.properties;
-                let uniqueKey = JSON.stringify(props);
-                if (!processedNames.has(uniqueKey)) {
-                    processedNames.add(uniqueKey);
-                    const endereco = props['endereco_completo'] || props['endereco'] || '-';
-                    const cnae_desc = props['desc_classe'] || "Atividade Não Informada";
-                    const rawPrecisao = props['precisao'] || props['precisão'] || '';
-                    const txtPrecisao = dictPrecisao[rawPrecisao] || rawPrecisao || '-';
-                    htmlContent += `<li style="margin-bottom:12px; color:#eee; border-bottom:1px solid #444; padding-bottom:8px;">
-                        <div style="font-weight:bold; color:#fff; font-size:12px; margin-bottom:4px; line-height:1.3;">${cnae_desc}</div>
-                        <div style="margin-bottom:3px; font-size:11px;">📍 <span style="color:#ccc;">${endereco}</span></div>
-                        <div style="font-size:11px;">🎯 <b>Geolocalização:</b> <span style="color:#FFD700;">${txtPrecisao}</span></div>
-                    </li>`;
+                const p = f.properties;
+                const uniqueId = JSON.stringify(f.geometry.coordinates) + '_' + JSON.stringify(f.properties);
+                
+                if (!processedItems.has(uniqueId)) {
+                    processedItems.add(uniqueId);
+                    
+                    if (layerId === 'estab') {
+                        const endereco = p['endereco_completo'] || p['endereco'] || '-';
+                        const cnae_desc = p['desc_classe'] || "Atividade Não Informada";
+                        const rawPrecisao = p['precisao'] || p['precisão'] || '';
+                        const dictPrecisao = { "numero": "🟢 Exata", "numero_aproximado": "🟡 Aproximada", "logradouro": "🟠 Rua", "cep": "🔴 Genérica", "localidade": "🔴 Genérica", "municipio": "🔴 Genérica" };
+                        const txtPrecisao = dictPrecisao[rawPrecisao] || rawPrecisao || '-';
+
+                        estabListString += `<li style="margin-bottom:12px; color:#eee; border-bottom:1px solid #444; padding-bottom:8px;">
+                            <div style="font-weight:bold; color:#fff; font-size:12px; margin-bottom:4px; line-height:1.3;">${cnae_desc}</div>
+                            <div style="margin-bottom:3px; font-size:11px;">📍 <span style="color:#ccc;">${endereco}</span></div>
+                            <div style="font-size:11px;">🎯 <b>Geolocalização:</b> <span style="color:#FFD700;">${txtPrecisao}</span></div>
+                        </li>`;
+                    } 
+                    else {
+                        const end = (p['logradouro'] || '') + ', ' + (p['numero'] || 'S/N');
+                        const endLimpo = end.replace(/^, /, "").trim();
+                        if(endLimpo.length > 3) enderecosUnicos.add(endLimpo);
+
+                        if(p['area_construida']) areaConstruidaTotal += parseFloat(p['area_construida']);
+                        if(p['area_terreno']) areaTerrenoMax = Math.max(areaTerrenoMax, parseFloat(p['area_terreno']));
+                        if(p['num_pavimentos']) pavimentosMax = Math.max(pavimentosMax, parseFloat(p['num_pavimentos']));
+
+                        const prec = (p['precisao'] || '').toLowerCase();
+                        if (prec.includes('rooftop') || prec.includes('exact') || prec.includes('high') || (p['numero'] && p['numero'] !== '0' && p['numero'] !== '')) {
+                            geocodeScore++;
+                        }
+                    }
                 }
             });
-            htmlContent += `</ul><div style="margin-top:10px; padding-top:8px; border-top: 1px dashed #666; font-size:10px; color:#aaa; line-height:1.3;"><b>Entenda a Precisão:</b><br>Exata (Lote) vs Aproximada (Rua/CEP).</div>`;
-            currentClickPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, className: 'sticky-popup', maxWidth: '340px' })
+
+            let htmlContent = `<div style="border-bottom: 2px solid ${headerColor}; margin-bottom: 8px; font-weight:bold; font-size:12px; color:${headerColor}; text-transform:uppercase;">${titleText}</div>`;
+            
+            if (layerId === 'estab') {
+                 htmlContent += `<div style="margin-bottom:8px;"><b>${processedItems.size}</b> usos encontrados neste local.</div>`;
+                 htmlContent += `<ul style="margin:0; padding-left:0; list-style-type: none; max-height:200px; overflow-y:auto;">${estabListString}</ul>`;
+            } else {
+                let listaEnderecos = Array.from(enderecosUnicos).sort();
+                let displayEnd = "";
+                let qtdEnderecos = enderecosUnicos.size;
+                let pctTecnica = Math.round((geocodeScore / processedItems.size) * 100);
+                
+                let corBarra, textoBarra;
+                if (qtdEnderecos > 1) {
+                    corBarra = '#F39C12'; textoBarra = `Aglomerado (${qtdEnderecos} endereços)`;
+                } else if (pctTecnica < 60) {
+                    corBarra = '#E74C3C'; textoBarra = `Baixa (${pctTecnica}%)`;
+                } else {
+                    corBarra = '#27AE60'; textoBarra = `Exata (Lote Único)`;
+                }
+                
+                if (listaEnderecos.length === 1) {
+                    displayEnd = `<div style="font-size:13px; color:#fff; font-weight:bold; margin-bottom:5px;">📍 ${listaEnderecos[0]}</div>`;
+                } else {
+                    displayEnd = `<div style="font-size:11px; color:#F39C12; font-weight:bold; margin-bottom:4px;">⚠️ Múltiplos Endereços (${listaEnderecos.length}):</div>
+                                  <div style="font-size:11px; color:#ddd; margin-bottom:8px; max-height:80px; overflow-y:auto; border-left:2px solid #F39C12; padding-left:5px; background:rgba(0,0,0,0.2);">
+                                    ${listaEnderecos.map(e => `• ${e}`).join('<br>')}
+                                  </div>`;
+                }
+
+                htmlContent += `
+                    ${displayEnd}
+                    <div style="background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                            <span>🏢 <b>Registros (IPTU):</b></span> <span style="color:#fff; font-weight:bold;">${processedItems.size}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                            <span>🏗️ <b>Área Constr. Total:</b></span> <span style="color:#fff;">${fmt(areaConstruidaTotal)} m²</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                            <span>📐 <b>Área do Terreno:</b></span> <span style="color:#fff;">${fmt(areaTerrenoMax)} m²</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span>⬆️ <b>Pavimentos (Máx):</b></span> <span style="color:#fff;">${fmt(pavimentosMax)}</span>
+                        </div>
+                    </div>
+                    <div style="font-size:10px; color:#aaa; border-top:1px dashed #555; padding-top:5px; display:flex; align-items:center; justify-content:space-between;">
+                        <span>Precisão Espacial:</span>
+                        <span style="color:${corBarra}; font-weight:bold; border:1px solid ${corBarra}; padding:1px 6px; border-radius:4px;">
+                            ${textoBarra}
+                        </span>
+                    </div>
+                `;
+            }
+
+            currentClickPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false, className: 'sticky-popup', maxWidth: '320px' })
             .setLngLat(e.lngLat).setHTML(htmlContent).addTo(map);
             currentClickPopup.on('close', () => { currentClickPopup = null; });
         });
+        
         map.on('mouseenter', layerId, () => { if(!isSelecting) map.getCanvas().style.cursor = 'pointer'; });
         map.on('mouseleave', layerId, () => { if(!isSelecting) map.getCanvas().style.cursor = ''; });
     } else {
@@ -569,16 +743,23 @@ function addTooltip(layerId, propName) {
             map.getCanvas().style.cursor = 'pointer';
             const features = map.queryRenderedFeatures(e.point, { layers: [layerId] });
             if (!features.length) return;
+            
             let title = "ITEM ENCONTRADO"; let layerColor = '#333';
             if (map.getLayer(layerId)) { const p = map.getLayer(layerId).paint; if(p['fill-color']) layerColor = p['fill-color']; else if(p['circle-color']) layerColor = p['circle-color']; }
             if (Array.isArray(layerColor)) layerColor = "#aaa"; 
             if (layerId.includes('tomb')) title = "BEM TOMBADO"; if (layerId === 'fav') title = "FAVELA"; if (layerId === 'uso') title = "USO DO SOLO";
+            
             let htmlContent = `<div style="border-bottom: 2px solid ${layerColor}; margin-bottom: 6px; font-weight:bold; font-size:11px; color:#ffffff; text-transform:uppercase;">${title}</div><ul style="margin:0; padding-left:15px; list-style-type: disc;">`;
             let processedNames = new Set();
             features.forEach(f => {
                 const props = f.properties;
                 let nome = props[propName] || "Sem nome";
                 nome = nome.replace(/Ã\?/g, "Ç").replace(/Ã\s/g, "Ã");
+                
+                if (layerId.includes('tomb') && props['bp_nome']) {
+                    nome = props['bp_nome']; 
+                }
+
                 if (!processedNames.has(nome)) { processedNames.add(nome); htmlContent += `<li style="margin-bottom:3px; color:#fff;">${nome}</li>`; }
             });
             htmlContent += `</ul>`;
@@ -596,16 +777,15 @@ map.on("load", function () {
         if (typeof initAmb === "function") initAmb(map);
         if (typeof initInfra === "function") initInfra(map);
         if (typeof initSocio === "function") initSocio(map); 
-        if(typeof data.dist !== 'undefined') { map.addSource("dist", {type:"geojson", data:data.dist}); map.addLayer({ id: "dist", type: "line", source: "dist", paint: { "line-color": "#7570b3", "line-width": 2, "line-dasharray": [2, 2] }, layout: { visibility: "none" } }); }
-        if(typeof data.piu !== 'undefined') { map.addSource("piu", {type:"geojson", data:data.piu}); map.addLayer({ id: "piu", type: "line", source: "piu", paint: {"line-color": "#FF0000", "line-width": 3}, layout: {visibility: "visible"} }); }
-        if(typeof data.tri !== 'undefined') { map.addSource("tri", {type:"geojson", data:data.tri}); map.addLayer({ id: "tri", type: "line", source: "tri", paint: {"line-color": "#000", "line-width": 2}, layout: {visibility: "none"} }); }
+        if(typeof data.dist !== 'undefined' && data.dist !== 'null') { map.addSource("dist", {type:"geojson", data:data.dist}); map.addLayer({ id: "dist", type: "line", source: "dist", paint: { "line-color": "#7570b3", "line-width": 2, "line-dasharray": [2, 2] }, layout: { visibility: "none" } }); }
+        if(typeof data.piu !== 'undefined' && data.piu !== 'null') { map.addSource("piu", {type:"geojson", data:data.piu}); map.addLayer({ id: "piu", type: "line", source: "piu", paint: {"line-color": "#FF0000", "line-width": 3}, layout: {visibility: "visible"} }); }
+        if(typeof data.tri !== 'undefined' && data.tri !== 'null') { map.addSource("tri", {type:"geojson", data:data.tri}); map.addLayer({ id: "tri", type: "line", source: "tri", paint: {"line-color": "#000", "line-width": 2}, layout: {visibility: "none"} }); }
         
-        // --- RECUPERANDO A CAMADA DE EDIFICAÇÕES 3D (CORREÇÃO) ---
-        if(typeof data.edif !== 'undefined') {
+        if(typeof data.edif !== 'undefined' && data.edif !== 'null') {
              map.addSource("edif", {type:"geojson", data:data.edif});
              map.addLayer({
                  id: "edif",
-                 type: "fill-extrusion", // <--- AQUI ESTÁ O 3D DE VOLTA!
+                 type: "fill-extrusion",
                  source: "edif",
                  paint: {
                      "fill-extrusion-color": ["get", "cor_hex"],
@@ -613,7 +793,7 @@ map.on("load", function () {
                      "fill-extrusion-base": 0,
                      "fill-extrusion-opacity": 0.9
                  },
-                 layout: { visibility: "visible" }
+                 layout: { visibility: "none" } 
              });
         }
 
@@ -624,4 +804,5 @@ map.on("load", function () {
     } catch (erro) { console.error("ERRO CRÍTICO:", erro); }
     document.getElementById('loader').style.opacity = '0'; setTimeout(() => { document.getElementById('loader').style.display = 'none'; }, 500);
 });
+
 const input = document.getElementById("search-input"); const suggestionsBox = document.getElementById("suggestions"); const clearBtn = document.getElementById("clear-btn"); let marker = null; let debounceTimer; function toggleClearBtn() { clearBtn.style.display = (input.value.length > 0 || marker !== null) ? "block" : "none"; } clearBtn.addEventListener("click", function() { input.value = ""; suggestionsBox.style.display = "none"; if (marker) { marker.remove(); marker = null; } toggleClearBtn(); }); input.addEventListener("input", function() { toggleClearBtn(); clearTimeout(debounceTimer); if (this.value.length < 3) { suggestionsBox.style.display = "none"; return; } debounceTimer = setTimeout(() => { fetch("https://nominatim.openstreetmap.org/search?format=json&limit=5&q=" + encodeURIComponent(this.value + ", São Paulo")).then(res => res.json()).then(data => { suggestionsBox.innerHTML = ""; if(data.length){ suggestionsBox.style.display = "block"; data.forEach(p => { let div = document.createElement("div"); div.className = "suggestion-item"; div.innerText = p.display_name.split(",")[0]; div.onclick = () => { map.flyTo({center:[p.lon, p.lat], zoom:18, pitch:60}); if(marker) marker.remove(); marker = new maplibregl.Marker({color: "#EB5757"}).setLngLat([p.lon, p.lat]).setPopup(new maplibregl.Popup().setText(p.display_name.split(",")[0])).addTo(map).togglePopup(); suggestionsBox.style.display = "none"; input.value = p.display_name.split(",")[0]; toggleClearBtn(); }; suggestionsBox.appendChild(div); }); } }); }, 500); }); document.addEventListener("click", function(e) { if (e.target !== input && e.target !== suggestionsBox && e.target !== clearBtn) { suggestionsBox.style.display = "none"; } });

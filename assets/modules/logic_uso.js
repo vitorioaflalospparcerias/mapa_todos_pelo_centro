@@ -24,7 +24,7 @@ function initUso(map) {
         });
     }
 
-    // --- NOVA CAMADA: ESTABELECIMENTOS (GPKG) ---
+    // --- ESTABELECIMENTOS ---
     if(data.estab && data.estab !== "null") {
         map.addSource("estab", { type: "geojson", data: data.estab });
         map.addLayer({
@@ -37,13 +37,39 @@ function initUso(map) {
             },
             layout: { visibility: "none" }
         });
-        // ATENÇÃO: Substitua 'nome_fantasia' pelo nome real da coluna no seu GPKG se for diferente
         addTooltip("estab", "nome_fantasia"); 
     }
-    // ----------------------------------------------
+    
+    // --- IPTU 2025 ---
+    if(data.iptu && data.iptu !== "null") {
+        map.addSource("iptu", { type: "geojson", data: data.iptu });
+        map.addLayer({
+            id: "iptu", type: "circle", source: "iptu",
+            paint: {
+                "circle-color": "#2980B9", 
+                "circle-radius": 5,
+                "circle-stroke-width": 1.5,
+                "circle-stroke-color": "#ffffff",
+                "circle-opacity": 0.9
+            },
+            layout: { visibility: "none" }
+        });
+        addTooltip("iptu");
+    }
 
     // --- CAMADAS DE TOMBAMENTO ---
-    // A. Visão por STATUS
+    
+    // NOVA CAMADA: TOMBAMENTO GERAL
+    if(data.tomb_geral && data.tomb_geral !== "null") {
+        map.addSource("tomb_geral", { type: "geojson", data: data.tomb_geral });
+        map.addLayer({
+            id: "tomb_geral", type: "fill", source: "tomb_geral",
+            paint: { "fill-color": ["get", "cor_hex"], "fill-opacity": 0.8 },
+            layout: { visibility: "none" }
+        });
+        addTooltip("tomb_geral", "bp_nome"); 
+    }
+
     if(data.tomb_status && data.tomb_status !== "null") {
         map.addSource("tomb_status", { type: "geojson", data: data.tomb_status });
         map.addLayer({
@@ -54,7 +80,6 @@ function initUso(map) {
         addTooltip("tomb_status", "bp_nome"); 
     }
 
-    // B. Visão por ÓRGÃO (JURISDIÇÃO)
     if(data.tomb_orgao && data.tomb_orgao !== "null") {
         map.addSource("tomb_orgao", { type: "geojson", data: data.tomb_orgao });
         map.addLayer({
