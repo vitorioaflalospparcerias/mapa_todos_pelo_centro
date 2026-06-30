@@ -1,5 +1,5 @@
 # ==============================================================================
-# ARQUIVO: 01_etl_layers.R (Versão Final: Limpeza e Pontos Individuais)
+# ARQUIVO: 01_etl_layers.R (Versão Atualizada: Novo Perímetro AIU)
 # ==============================================================================
 library(sf)
 library(dplyr)
@@ -75,9 +75,14 @@ ler_transformar <- function(path) {
 
 # --- PROCESSAMENTO BASE ---
 print(">>> 1. Recortes Base...")
-path_piu        <- file.path(base_raw, "PIU_SETOR_CENTRAL/11_AIU_Setor_Central.shp")
+path_piu        <- file.path(base_raw, "PIU_SETOR_CENTRAL/perimetro_aiu.shp")
 path_triangulo  <- "C:/Users/vitorio.aflalo/OneDrive - SP PARCERIAS/SPP DGE - Núcleo de Pesquisa/11 - Todos Pelo Centro/06 - QGIS/shapefile/Perímetro Triângulo SP.shp"
-piu        <- ler_transformar(path_piu) %>% filter(Identif == "Perimetro Adesao")
+
+# Unifica geometrias
+piu <- ler_transformar(path_piu) %>%
+  st_union() %>%
+  st_sf()
+
 triangulo <- ler_transformar(path_triangulo)
 
 proc_save <- function(obj, name) {
@@ -91,32 +96,25 @@ print(">>> 3.1. Processando IPTU 2025 (Limpeza Numérica)...")
 path_iptu_csv <- file.path(base_raw, "IPTU_2025_geocodificado_FINALcomareas.csv")
 
 if(file.exists(path_iptu_csv)) {
-  # Lê tudo como texto para evitar erros de importação automática
   df_iptu <- read.csv(path_iptu_csv, sep = ";", colClasses = "character", encoding = "UTF-8")
   
-  # Função para limpar formato brasileiro (1.000,00 -> 1000.00)
   limpar_numero <- function(x) {
-    x <- gsub("\\.", "", x)  # Remove ponto de milhar
-    x <- gsub(",", ".", x)   # Troca vírgula por ponto
+    x <- gsub("\\.", "", x) 
+    x <- gsub(",", ".", x)  
     as.numeric(x)
   }
   
-  # Aplica a limpeza
   df_iptu$longitude <- limpar_numero(df_iptu$longitude)
   df_iptu$latitude  <- limpar_numero(df_iptu$latitude)
   df_iptu$area_terreno <- limpar_numero(df_iptu$area_terreno)
   df_iptu$area_construida <- limpar_numero(df_iptu$area_construida)
   df_iptu$num_pavimentos <- limpar_numero(df_iptu$num_pavimentos)
   
-  # --- TRATAMENTO DE PRECISÃO (Seu pedido) ---
-  # Se o CSV já tiver coluna de 'result_type' ou 'loctype' do Geocode, ele usará.
-  # Se não, criamos uma baseada na existência do número.
   if("result_type" %in% names(df_iptu)) {
     df_iptu$precisao <- df_iptu$result_type 
   } else if ("loctype" %in% names(df_iptu)) {
     df_iptu$precisao <- df_iptu$loctype
   } else {
-    # Fallback: Se tem número preenchido e não é zero, assume precisão melhor
     df_iptu$precisao <- ifelse(df_iptu$numero != "" & !is.na(df_iptu$numero) & df_iptu$numero != "0", "high_confidence", "approximate")
   }
   
@@ -127,7 +125,6 @@ if(file.exists(path_iptu_csv)) {
     sf_iptu_calc <- st_transform(sf_iptu, crs_calculo)
     sf_iptu_piu <- st_filter(sf_iptu_calc, piu)
     
-    # Seleciona colunas essenciais + Precisão (SEM AGRUPAR, PONTOS INDIVIDUAIS)
     sf_iptu_final <- sf_iptu_piu %>%
       select(area_terreno, area_construida, num_pavimentos, logradouro, numero, precisao)
     

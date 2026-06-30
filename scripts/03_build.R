@@ -75,8 +75,18 @@ prep_data <- function(path, tipo) {
   } else if (tipo == "tomb_orgao") {
     has_protection <- function(col) { t <- toupper(as.character(col)); return(!is.na(t) & !str_detect(t, "NÃO CONSTA") & !str_detect(t, "NAO CONSTA") & str_length(t) > 2) }
     df <- df %>% mutate( is_mun = has_protection(bp_compres), is_est = has_protection(bp_condeph), is_fed = has_protection(bp_iphan) ) %>% mutate( jurisdicao = case_when( is_mun & is_est & is_fed ~ "Três Esferas (Mun/Est/Fed)", is_mun & is_est ~ "Municipal + Estadual", is_mun & is_fed ~ "Municipal + Federal", is_est & is_fed ~ "Estadual + Federal", is_mun ~ "Apenas Municipal (Conpresp)", is_est ~ "Apenas Estadual (Condephaat)", is_fed ~ "Apenas Federal (IPHAN)", TRUE ~ "Outros / Em Análise" ) )
-    cores_org <- c("Três Esferas (Mun/Est/Fed)" = "#000000", "Municipal + Estadual" = "#542788", "Municipal + Federal" = "#b2182b", "Estadual + Federal" = "#d6604d", "Apenas Municipal (Conpresp)" = "#2166ac", "Apenas Estadual (Condephaat)" = "#d95f02", "Apenas Federal (IPHAN)" = "#FFFFB2", "Outros / Em Análise" = "#999999")
-    df$cor_hex <- cores_org[df$jurisdicao]; df$cor_hex[is.na(df$cor_hex)] <- "#999999"
+    
+    # NOVA PALETA: Mais neutra, escura e com cores bem distinguíveis
+    cores_org <- c("Três Esferas (Mun/Est/Fed)" = "#111111", 
+                   "Municipal + Estadual" = "#5B2C6F", 
+                   "Municipal + Federal" = "#7B241C", 
+                   "Estadual + Federal" = "#1E8449", 
+                   "Apenas Municipal (Conpresp)" = "#2874A6", 
+                   "Apenas Estadual (Condephaat)" = "#AF601A", 
+                   "Apenas Federal (IPHAN)" = "#B7950B", 
+                   "Outros / Em Análise" = "#707B7C")
+    
+    df$cor_hex <- cores_org[df$jurisdicao]; df$cor_hex[is.na(df$cor_hex)] <- "#707B7C"
     legenda_tomb_orgao_html <<- ""; for(cat in names(cores_org)) { if(cat %in% unique(df$jurisdicao)) legenda_tomb_orgao_html <<- paste0(legenda_tomb_orgao_html, sprintf('<div class="leg-item"><span style="background:%s;"></span>%s</div>', cores_org[cat], cat)) }
     cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_utf8(df[[c]])
     
@@ -373,39 +383,17 @@ html_content <- paste0('
     <div style="display:flex; justify-content:space-between; font-size:9px; color:#666;"><span>Térreo</span><span>+50m</span></div>
 </div>
 
-<div id="legenda-iptu-explica" class="legend-container" style="position: absolute; top: 90px; right: 50px; width: 260px; display: none; z-index: 1000;">
-    <div class="legend-title">Metodologia de Agrupamento</div>
-    <div style="font-size:10px; color:#555; line-height:1.4;">
-        <div style="margin-bottom:6px; border-bottom:1px solid #eee; padding-bottom:4px;">
-            <strong>Cálculo dos Indicadores:</strong>
-            <ul style="margin: 4px 0 0 15px; padding:0;">
-                <li>🏢 <b>Unidades:</b> Contagem total de registros.</li>
-                <li>🏗️ <b>Área Constr.:</b> Soma total das unidades.</li>
-                <li>📐 <b>Terreno:</b> Valor máximo (área do lote).</li>
-                <li>⬆️ <b>Pavimentos:</b> Valor máximo (altura).</li>
+<div id="legenda-iptu-explica" class="legend-container" style="position: absolute; top: 90px; right: 50px; width: 300px; display: none; z-index: 1000; padding: 15px;">
+    <div class="legend-title" style="font-size: 14px; margin-bottom: 10px;">Metodologia de Agrupamento</div>
+    <div style="font-size:12px; color:#555; line-height:1.5;">
+        <div style="margin-bottom:8px;">
+            <strong style="font-size:13px; color:#333;">Cálculo dos Indicadores:</strong>
+            <ul style="margin: 6px 0 0 18px; padding:0;">
+                <li style="margin-bottom: 4px;">🏢 <b>Unidades:</b> Contagem total de registros.</li>
+                <li style="margin-bottom: 4px;">🏗️ <b>Área Constr.:</b> Soma total das unidades.</li>
+                <li style="margin-bottom: 4px;">📐 <b>Terreno:</b> Média das áreas dos lotes.</li>
+                <li style="margin-bottom: 4px;">⬆️ <b>Pavimentos:</b> Valor máximo (altura).</li>
             </ul>
-        </div>
-        <div class="legend-title" style="margin-top:8px; margin-bottom:4px;">Precisão da Geolocalização</div>
-        <div style="margin-bottom:2px;"><span style="color:#27AE60; font-weight:bold;">● Exata:</span> Endereço único e exato.</div>
-        <div style="margin-bottom:2px;"><span style="color:#F39C12; font-weight:bold;">● Aglomerado:</span> Múltiplos endereços em 1 ponto.</div>
-        <div><span style="color:#E74C3C; font-weight:bold;">● Aproximada:</span> Número não localizado.</div>
-    </div>
-</div>
-
-<div id="legenda-estab-explica" class="legend-container" style="position: absolute; top: 90px; right: 50px; width: 220px; display: none; z-index: 1000;">
-    <div class="legend-title">Precisão da Localização</div>
-    <div style="font-size:10px; color:#555; line-height:1.4;">
-        <div style="margin-bottom:4px;">
-            <span style="color:#1ABC9C; font-weight:bold;">● Exata:</span><br>
-            Localizado no número predial correto.
-        </div>
-        <div style="margin-bottom:4px;">
-            <span style="color:#FFD700; font-weight:bold;">● Aproximada:</span><br>
-            Número estimado por interpolação.
-        </div>
-        <div>
-            <span style="color:#E74C3C; font-weight:bold;">● Genérica:</span><br>
-            Posicionado no centro da rua ou bairro.
         </div>
     </div>
 </div>

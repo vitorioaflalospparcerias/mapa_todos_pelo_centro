@@ -327,14 +327,17 @@ function calculateStats(features) {
     if (hasIptu && iptuStats.count > 0) {
         foundAny = true;
         let totalTerr = 0; let sumMaxPavs = 0; let numPredios = terrenosAgrupados.size;
+        
         terrenosAgrupados.forEach(val => { totalTerr += val.terr; sumMaxPavs += val.pav; });
+        
         const totalConst = iptuStats.sumAreaConst.toLocaleString('pt-BR', {maximumFractionDigits: 0});
-        const areaTerrLabel = totalTerr.toLocaleString('pt-BR', {maximumFractionDigits: 0});
+        const avgTerr = numPredios > 0 ? (totalTerr / numPredios) : 0;
+        const avgTerrLabel = avgTerr.toLocaleString('pt-BR', {maximumFractionDigits: 0});
         const avgPav = numPredios > 0 ? (sumMaxPavs / numPredios).toFixed(1).replace('.', ',') : 0;
 
         html += `<div class="count-item"><div class="count-title">Características dos Imóveis (Lotes: ${numPredios} | Regs: ${iptuStats.count})</div>`;
         html += renderRow('Área Constr. Total', `${totalConst} m²`);
-        html += renderRow('Área de Terreno Total', `${areaTerrLabel} m²`);
+        html += renderRow('Média de Área de Terreno', `${avgTerrLabel} m²`);
         html += renderRow('Média de Pavimentos', `${avgPav} andares`);
         html += `</div>`;
     }
@@ -420,6 +423,18 @@ window.closeResults = function() {
     clearLasso(); 
 }
 
+// NOVO: Função para limpar as interações (Popups e Ferramenta de Seleção)
+window.clearInteractions = function() {
+    if (currentClickPopup) { 
+        currentClickPopup.remove(); 
+        currentClickPopup = null; 
+    }
+    if (hoverPopup) { 
+        hoverPopup.remove(); 
+    }
+    window.closeResults();
+}
+
 // --- UI E POPUPS ---
 var hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10, className: 'tooltip-popup' });
 var currentClickPopup = null; 
@@ -477,6 +492,8 @@ var layersByTab = {
 function keepLabelsOnTop() { if (map.getLayer('dist_labels')) { map.moveLayer('dist_labels'); } }
 
 function switchTab(tabId, btn) {
+    window.clearInteractions(); // Chama a função de limpeza ao trocar de aba
+    
     document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
     document.getElementById(tabId).classList.add("active");
@@ -494,6 +511,8 @@ function switchTab(tabId, btn) {
 }
 
 window.clearCurrentTab = function() {
+    window.clearInteractions(); // Chama a função de limpeza ao desmarcar tudo
+
     const activePane = document.querySelector('.tab-pane.active');
     if (!activePane) return;
     const tabId = activePane.id;
@@ -530,6 +549,8 @@ function setLayout(id, vis) {
 }
 
 window.toggleL = function(id) {
+    window.clearInteractions(); // Limpa popups e seleções imediatamente ao clicar na camada
+    
     var chk = document.getElementById("chk-" + id);
     if (!chk) return;
     
@@ -553,8 +574,15 @@ window.toggleL = function(id) {
 
         const socioIds = ['socio_dens', 'socio_pop', 'socio_dom'];
         if (socioIds.includes(id)) {
-            const conflict = socioIds.find(otherId => { if (otherId === id) return false; const otherChk = document.getElementById('chk-' + otherId); return otherChk && otherChk.checked; });
-            if (conflict) { alert(`Visualização Conflitante!`); chk.checked = false; return; }
+            socioIds.forEach(otherId => {
+                if (otherId !== id) {
+                    const otherChk = document.getElementById('chk-' + otherId);
+                    if (otherChk && otherChk.checked) {
+                        otherChk.checked = false;
+                        setLayout(otherId, "none");
+                    }
+                }
+            });
         }
         
         if (['tomb_geral', 'tomb_status', 'tomb_orgao'].includes(id)) {
@@ -606,10 +634,6 @@ function updateLegends() {
     var socioDom = document.getElementById("chk-socio_dom")?.checked;
     if(document.getElementById("legenda-socio-dom")) document.getElementById("legenda-socio-dom").style.display = socioDom ? "block" : "none";
     
-    var estab = document.getElementById("chk-estab")?.checked;
-    if(document.getElementById("legenda-estab-explica"))
-        document.getElementById("legenda-estab-explica").style.display = estab ? "block" : "none";
-
     var iptu = document.getElementById("chk-iptu")?.checked;
     if(document.getElementById("legenda-iptu-explica"))
         document.getElementById("legenda-iptu-explica").style.display = iptu ? "block" : "none";
@@ -650,13 +674,22 @@ function addTooltip(layerId, propName) {
                         const endereco = p['endereco_completo'] || p['endereco'] || '-';
                         const cnae_desc = p['desc_classe'] || "Atividade Não Informada";
                         const rawPrecisao = p['precisao'] || p['precisão'] || '';
-                        const dictPrecisao = { "numero": "🟢 Exata", "numero_aproximado": "🟡 Aproximada", "logradouro": "🟠 Rua", "cep": "🔴 Genérica", "localidade": "🔴 Genérica", "municipio": "🔴 Genérica" };
-                        const txtPrecisao = dictPrecisao[rawPrecisao] || rawPrecisao || '-';
+                        
+                        const infoPrecisao = { 
+                            "numero": { text: "Exata (Número predial correto)", color: "#27AE60" }, 
+                            "numero_aproximado": { text: "Aproximada (Número estimado por interpolação)", color: "#F39C12" }, 
+                            "logradouro": { text: "Genérica (Posicionado no centro da rua ou bairro)", color: "#E74C3C" }, 
+                            "cep": { text: "Genérica (Posicionado no centro da rua ou bairro)", color: "#E74C3C" }, 
+                            "localidade": { text: "Genérica (Posicionado no centro da rua ou bairro)", color: "#E74C3C" }, 
+                            "municipio": { text: "Genérica (Posicionado no centro da rua ou bairro)", color: "#E74C3C" } 
+                        };
+                        
+                        const valPrecisao = infoPrecisao[rawPrecisao] || { text: rawPrecisao || 'Não informada', color: "#aaa" };
 
                         estabListString += `<li style="margin-bottom:12px; color:#eee; border-bottom:1px solid #444; padding-bottom:8px;">
                             <div style="font-weight:bold; color:#fff; font-size:12px; margin-bottom:4px; line-height:1.3;">${cnae_desc}</div>
                             <div style="margin-bottom:3px; font-size:11px;">📍 <span style="color:#ccc;">${endereco}</span></div>
-                            <div style="font-size:11px;">🎯 <b>Geolocalização:</b> <span style="color:#FFD700;">${txtPrecisao}</span></div>
+                            <div style="font-size:11px;">🎯 <b>Geolocalização:</b> <span style="color:${valPrecisao.color}; font-weight:bold;">${valPrecisao.text}</span></div>
                         </li>`;
                     } 
                     else {
@@ -689,11 +722,11 @@ function addTooltip(layerId, propName) {
                 
                 let corBarra, textoBarra;
                 if (qtdEnderecos > 1) {
-                    corBarra = '#F39C12'; textoBarra = `Aglomerado (${qtdEnderecos} endereços)`;
+                    corBarra = '#F39C12'; textoBarra = `Aglomerado (Múltiplos endereços em 1 ponto)`;
                 } else if (pctTecnica < 60) {
-                    corBarra = '#E74C3C'; textoBarra = `Baixa (${pctTecnica}%)`;
+                    corBarra = '#E74C3C'; textoBarra = `Aproximada (Número não localizado)`;
                 } else {
-                    corBarra = '#27AE60'; textoBarra = `Exata (Lote Único)`;
+                    corBarra = '#27AE60'; textoBarra = `Exata (Endereço único e exato)`;
                 }
                 
                 if (listaEnderecos.length === 1) {
@@ -709,13 +742,13 @@ function addTooltip(layerId, propName) {
                     ${displayEnd}
                     <div style="background:rgba(255,255,255,0.1); padding:8px; border-radius:4px; margin-bottom:10px;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                            <span>🏢 <b>Registros (IPTU):</b></span> <span style="color:#fff; font-weight:bold;">${processedItems.size}</span>
+                            <span title="Cada registro corresponde a um lançamento de IPTU individual ou fração (ex: apartamentos ou salas comerciais). Um mesmo prédio ou terreno pode ter vários registros.">🏢 <b style="cursor:help; border-bottom:1px dotted #ccc;">Registros (IPTU):</b></span> <span style="color:#fff; font-weight:bold;">${processedItems.size}</span>
                         </div>
                         <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
                             <span>🏗️ <b>Área Constr. Total:</b></span> <span style="color:#fff;">${fmt(areaConstruidaTotal)} m²</span>
                         </div>
                         <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                            <span>📐 <b>Área do Terreno:</b></span> <span style="color:#fff;">${fmt(areaTerrenoMax)} m²</span>
+                            <span>📐 <b>Área do Terreno (Máx):</b></span> <span style="color:#fff;">${fmt(areaTerrenoMax)} m²</span>
                         </div>
                         <div style="display:flex; justify-content:space-between;">
                             <span>⬆️ <b>Pavimentos (Máx):</b></span> <span style="color:#fff;">${fmt(pavimentosMax)}</span>
