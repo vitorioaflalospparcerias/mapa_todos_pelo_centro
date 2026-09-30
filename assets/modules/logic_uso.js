@@ -107,7 +107,7 @@ function initUso(map) {
         addTooltip("lote", "lm_nome");
     }
 
-    // 4. REFERÊNCIAS
+// 4. REFERÊNCIAS
     if(data.piu && data.piu !== "null") {
         map.addSource("piu", { type: "geojson", data: data.piu });
         map.addLayer({ id: "piu", type: "line", source: "piu", paint: { "line-color": "#FF0000", "line-width": 3 }, layout: { visibility: "visible" } });
@@ -115,6 +115,11 @@ function initUso(map) {
     if(data.tri && data.tri !== "null") {
         map.addSource("tri", { type: "geojson", data: data.tri });
         map.addLayer({ id: "tri", type: "line", source: "tri", paint: { "line-color": "#000000", "line-width": 2 }, layout: { visibility: "none" } });
+    }
+    // ADICIONE O QUADRILÁTERO AQUI:
+    if(data.quad && data.quad !== "null") {
+        map.addSource("quad", { type: "geojson", data: data.quad });
+        map.addLayer({ id: "quad", type: "line", source: "quad", paint: { "line-color": "#1f78b4", "line-width": 4 }, layout: { visibility: "none" } });
     }
     if(data.dist && data.dist !== "null") {
         map.addSource("dist", { type: "geojson", data: data.dist });

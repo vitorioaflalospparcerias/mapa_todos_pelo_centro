@@ -17,7 +17,7 @@ legenda_uso_html <- ""; legenda_tomb_status_html <- ""; legenda_tomb_orgao_html 
 legenda_socio_html <- ""; legenda_socio_pop_html <- ""; legenda_socio_dom_html <- "" 
 
 prep_data <- function(path, tipo) {
-  if (!file.exists(path)) { print(paste("⚠️ AVISO: Arquivo não encontrado:", path)); return("null") }
+  if (!file.exists(path)) { print(paste("&#9888; AVISO: Arquivo não encontrado:", path)); return("null") }
   is_gpkg <- grepl("\\.gpkg$", path, ignore.case = TRUE)
   
   df <- tryCatch({
@@ -27,7 +27,7 @@ prep_data <- function(path, tipo) {
   if(is.null(df) || nrow(df) == 0) return("null")
   
   df <- df[!st_is_empty(df), ]
-  if (!tipo %in% c("edificacao", "iptu_points", "estab", "arvores")) {
+  if (!tipo %in% c("edificacao", "iptu_points", "estab", "arvores", "quadrilatero")) {
     try({ df <- st_simplify(df, dTolerance = 0.00005, preserveTopology = TRUE) }, silent=TRUE)
   }
   
@@ -122,7 +122,9 @@ prep_data <- function(path, tipo) {
     df$cor_hex <- if(!is.null(cores[[tipo]])) cores[[tipo]] else "#999999"
     cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_utf8(df[[c]])
   }
-  return(sf_geojson(df, digits = 6))
+  j <- sf_geojson(df, digits = 6)
+  Encoding(j) <- 'UTF-8'
+  return(j)
 }
 
 # LEITURA DE ARQUIVOS
@@ -133,6 +135,7 @@ json_uso  <- prep_data("data/processed/layer_uso_solo.rds", "uso_solo")
 json_edif <- prep_data("data/processed/layer_edificacoes.rds", "edificacao")
 json_piu  <- prep_data("data/processed/layer_piu.rds", "piu")
 json_tri  <- prep_data("data/processed/layer_triangulo.rds", "triangulo")
+json_quad <- prep_data("data/processed/layer_quadrilatero.rds", "quadrilatero")
 json_dist <- prep_data("data/processed/layer_distritos.rds", "distrito")
 json_estab <- prep_data("data/processed/estabelecimentos_enriquecido.gpkg", "estabelecimentos")
 json_iptu  <- prep_data("data/processed/layer_iptu.rds", "iptu_points")
@@ -145,6 +148,10 @@ json_lote <- prep_data("data/processed/layer_loteamento.rds", "loteamento")
 json_parques <- prep_data("data/processed/layer_amb_parques.rds", "ambiental")
 json_pracas  <- prep_data("data/processed/layer_amb_pracas.rds", "ambiental")
 json_arvores <- prep_data("data/processed/layer_amb_arvores.rds", "ambiental")
+json_bosques <- prep_data("data/processed/layer_amb_bosques.rds", "ambiental")
+json_ecoponto <- prep_data("data/processed/layer_amb_ecoponto.rds", "ambiental")
+json_pev <- prep_data("data/processed/layer_amb_pev.rds", "ambiental")
+json_compostagem <- prep_data("data/processed/layer_amb_compostagem.rds", "ambiental")
 
 infra_structure <- list(
   "Transporte" = list("Metrô (Estação)" = "trans_metro_est", "Trem (Estação)" = "trans_trem_est", "Metrô (Linha)" = "trans_metro_lin", "Trem (Linha)" = "trans_trem_lin", "Ônibus (Terminal)" = "trans_bus_term", "Ônibus (Ponto)" = "trans_bus_pt", "Ciclovias" = "trans_bike"),
@@ -157,7 +164,8 @@ infra_structure <- list(
   "Esporte" = list("Centros Esp." = "infra_esp_centro", "Clubes" = "infra_esp_clube", "CDCs" = "infra_esp_cdc", "Estádios" = "infra_esp_estadio"),
   "Saúde" = list("UBS" = "infra_sau_ubs", "Hospitais" = "infra_sau_hosp", "Ambulatórios" = "infra_sau_ambul", "Saúde Mental" = "infra_sau_mental", "DST/Aids" = "infra_sau_dst", "Urgência" = "infra_sau_urgencia", "Outros" = "infra_sau_outros"),
   "Segurança" = list("Bombeiros" = "infra_seg_bombeiro", "GCM" = "infra_seg_gcm", "Polícia Civil" = "infra_seg_civil", "Polícia Militar" = "infra_seg_militar"),
-  "Serviços" = list("Consulados" = "infra_serv_consulado", "Correios" = "infra_serv_correios", "Poupatempo" = "infra_serv_poupatempo", "Shoppings" = "infra_serv_shopping")
+  "Serviços" = list("Consulados" = "infra_serv_consulado", "Correios" = "infra_serv_correios", "Poupatempo" = "infra_serv_poupatempo", "Shoppings" = "infra_serv_shopping"),
+  "Projetos Urbanos" = list("Subvenção e Requalifica" = "infra_subv_requalifica", "Ruas Temáticas" = "infra_ruas_tematicas")
 )
 
 print(">>> Processando Infra...")
@@ -182,12 +190,12 @@ for(cat_name in names(infra_structure)) {
 infra_labels_js_obj <- paste0("{", paste(label_map_list, collapse = ", "), "}")
 
 print(">>> Lendo Assets...")
-style_css   <- paste(readLines("assets/style.css", warn=FALSE), collapse = "\n")
-app_js      <- paste(readLines("assets/app.js", warn=FALSE), collapse = "\n")
-logic_uso   <- ""; if(file.exists("assets/modules/logic_uso.js")) logic_uso <- paste(readLines("assets/modules/logic_uso.js", warn=FALSE), collapse = "\n")
-logic_amb   <- ""; if(file.exists("assets/modules/logic_amb.js")) logic_amb <- paste(readLines("assets/modules/logic_amb.js", warn=FALSE), collapse = "\n")
-logic_infra <- ""; if(file.exists("assets/modules/logic_infra.js")) logic_infra <- paste(readLines("assets/modules/logic_infra.js", warn=FALSE), collapse = "\n")
-logic_socio <- ""; if(file.exists("assets/modules/logic_socio.js")) logic_socio <- paste(readLines("assets/modules/logic_socio.js", warn=FALSE), collapse = "\n")
+style_css   <- paste(readLines("assets/style.css", encoding="UTF-8", warn=FALSE), collapse = "\n")
+app_js      <- paste(readLines("assets/app.js", encoding="UTF-8", warn=FALSE), collapse = "\n")
+logic_uso   <- ""; if(file.exists("assets/modules/logic_uso.js")) logic_uso <- paste(readLines("assets/modules/logic_uso.js", encoding="UTF-8", warn=FALSE), collapse = "\n")
+logic_amb   <- ""; if(file.exists("assets/modules/logic_amb.js")) logic_amb <- paste(readLines("assets/modules/logic_amb.js", encoding="UTF-8", warn=FALSE), collapse = "\n")
+logic_infra <- ""; if(file.exists("assets/modules/logic_infra.js")) logic_infra <- paste(readLines("assets/modules/logic_infra.js", encoding="UTF-8", warn=FALSE), collapse = "\n")
+logic_socio <- ""; if(file.exists("assets/modules/logic_socio.js")) logic_socio <- paste(readLines("assets/modules/logic_socio.js", encoding="UTF-8", warn=FALSE), collapse = "\n")
 
 metadata_js_content <- '
 const LAYER_DATA = {
@@ -215,7 +223,11 @@ const LAYER_DATA = {
     "lote": { title: "Loteamentos Irregulares", source: "HabitaSampa", year: "2024", desc: "Loteamentos precários/irregulares." },
     "parques": { title: "Parques", source: "GeoSampa", year: "2024", desc: "Parques municipais e estaduais." },
     "pracas": { title: "Praças", source: "GeoSampa", year: "2024", desc: "Praças e áreas verdes públicas." },
-    "arvores": { title: "Árvores", source: "GeoSampa", year: "2020", desc: "Mapeamento arbóreo viário." }
+    "arvores": { title: "Árvores", source: "GeoSampa", year: "2020", desc: "Mapeamento arbóreo viário." },
+    "bosques": { title: "Bosques Urbanos", source: "SVMA", year: "2024", desc: "Bosques e áreas arborizadas cadastradas." },
+    "ecoponto": { title: "Ecopontos", source: "GeoSampa", year: "2024", desc: "Ecopontos para descarte de resíduos." },
+    "pev": { title: "Ponto de Entrega Voluntária", source: "GeoSampa", year: "2024", desc: "Pontos de Entrega Voluntária (PEV)." },
+    "compostagem": { title: "Pátio de Compostagem", source: "GeoSampa", year: "2024", desc: "Pátios de compostagem." }
 };
 '
 
@@ -249,7 +261,7 @@ html_content <- paste0('
 
     <div class="results-header">
         <span style="font-weight:bold;">Itens na Área Selecionada</span>
-        <span class="close-results" onclick="closeResults()">✕</span>
+        <span class="close-results" onclick="closeResults()">&times;</span>
     </div>
     <div id="results-content" class="results-content" style="max-height: 50vh; overflow-y: auto; overflow-x: hidden; padding-right: 5px;">
         <p style="color:#777; font-size:12px;">Clique na ferramenta de seleção e desenhe no mapa.</p>
@@ -257,7 +269,7 @@ html_content <- paste0('
 </div>
 
 <div id="info-card" class="info-card">
-    <div class="info-close" onclick="closeInfo()">✕</div>
+    <div class="info-close" onclick="closeInfo()">&times;</div>
     <h4 id="info-title">Título</h4>
     <div class="info-card-row"><span class="info-card-label">Fonte de Dados:</span><span id="info-source">-</span></div>
     <div class="info-card-row"><span class="info-card-label">Ano Base:</span><span id="info-year">-</span></div>
@@ -269,7 +281,7 @@ html_content <- paste0('
 
     <div class="search-container">
         <input type="text" id="search-input" class="search-input" placeholder="Buscar endereço..." autocomplete="off">
-        <div class="icon-container"><span id="clear-btn" class="search-clear">✕</span><span class="search-icon">🔍</span></div>
+        <div class="icon-container"><span id="clear-btn" class="search-clear">&times;</span><span class="search-icon">🔍</span></div>
         <div id="suggestions" class="suggestions-list"></div>
     </div>
     
@@ -279,7 +291,7 @@ html_content <- paste0('
             <button class="header-scroll-btn" onclick="event.stopPropagation(); scrollShortcuts(-1)">‹</button>
             <button class="header-scroll-btn" onclick="event.stopPropagation(); scrollShortcuts(1)">›</button>
         </div>
-        <span class="toggle-icon">▼</span>
+        <span class="toggle-icon">&#9660;</span>
     </div>
     
     <div id="pontos-interesse-body" class="panel-section-content" style="display: block;">
@@ -307,7 +319,7 @@ html_content <- paste0('
 
     <div class="tab-content">
         <div id="tab-socio" class="tab-pane">
-            <button class="btn-clear" onclick="clearCurrentTab()">🗑️ Desmarcar todos</button>
+            <button class="btn-clear" onclick="clearCurrentTab()">&#128465; Desmarcar todos</button>
             <span class="group-title">Censo 2022</span>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'socio_dens\')">!</span> <label>👥 Densidade Demográfica</label> <input type="checkbox" id="chk-socio_dens" onchange="toggleL(\'socio_dens\')"></div>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'socio_pop\')">!</span> <label>👤 População Absoluta</label> <input type="checkbox" id="chk-socio_pop" onchange="toggleL(\'socio_pop\')"></div>
@@ -315,7 +327,7 @@ html_content <- paste0('
         </div>
 
         <div id="tab-uso" class="tab-pane active">
-            <button class="btn-clear" onclick="clearCurrentTab()">🗑️ Desmarcar todos</button>
+            <button class="btn-clear" onclick="clearCurrentTab()">&#128465; Desmarcar todos</button>
             <span class="group-title">Ocupação do Solo</span>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'uso\')">!</span><label>🎨 Uso do Solo</label> <input type="checkbox" id="chk-uso" onchange="toggleL(\'uso\')"></div>
             
@@ -333,28 +345,35 @@ html_content <- paste0('
         </div>
 
         <div id="tab-infra" class="tab-pane">
-            <button class="btn-clear" onclick="clearCurrentTab()">🗑️ Desmarcar todos</button>
+            <button class="btn-clear" onclick="clearCurrentTab()">&#128465; Desmarcar todos</button>
             ', infra_html_menu, '
         </div>
 
         <div id="tab-amb" class="tab-pane">
-            <button class="btn-clear" onclick="clearCurrentTab()">🗑️ Desmarcar todos</button>
+            <button class="btn-clear" onclick="clearCurrentTab()">&#128465; Desmarcar todos</button>
             <span class="group-title">Áreas Verdes</span>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'parques\')">!</span><label>🌲 Parques e Áreas de Conservação</label> <input type="checkbox" id="chk-parques" onchange="toggleL(\'parques\')"></div>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'pracas\')">!</span><label>🍃 Praças e Largos</label> <input type="checkbox" id="chk-pracas" onchange="toggleL(\'pracas\')"></div>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'arvores\')">!</span><label>🌳 Árvores (Pontos)</label> <input type="checkbox" id="chk-arvores" onchange="toggleL(\'arvores\')"></div>
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'bosques\')">!</span><label>🌿 Bosques Urbanos</label> <input type="checkbox" id="chk-bosques" onchange="toggleL(\'bosques\')"></div>
+            
+            <span class="group-title" style="margin-top: 15px;">Gestão de Resíduos</span>
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'ecoponto\')">!</span><label>♻️ Ecopontos</label> <input type="checkbox" id="chk-ecoponto" onchange="toggleL(\'ecoponto\')"></div>
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'pev\')">!</span><label>♻️ Pontos de Entrega Voluntária (PEV)</label> <input type="checkbox" id="chk-pev" onchange="toggleL(\'pev\')"></div>
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'compostagem\')">!</span><label>♻️ Pátio de Compostagem</label> <input type="checkbox" id="chk-compostagem" onchange="toggleL(\'compostagem\')"></div>
         </div>
     </div>
 
     <div class="panel-section-header" onclick="toggleSection(\'referencias-body\', this)" style="border-top: 1px solid #eee;">
-        <span>VISUALIZAÇÃO E CAMADAS-BASE</span><span class="toggle-icon">▼</span>
+        <span>VISUALIZAÇÃO E CAMADAS-BASE</span><span class="toggle-icon">&#9660;</span>
     </div>
     <div id="referencias-body" class="panel-section-content" style="display: block;">
         <div class="fixed-layers">
             <span class="group-title" style="margin-top:0; margin-bottom:10px;">Camadas de Referência</span>
             <div class="layer-item"><label>🏢 Edificações 3D</label> <input type="checkbox" checked id="chk-edif" onchange="toggleL(\'edif\')"></div>
             <div class="layer-item"><label>🔴 Perímetro PIU</label> <input type="checkbox" checked id="chk-piu" onchange="toggleL(\'piu\')"></div>
-            <div class="layer-item"><label>⚫ Triângulo Histórico</label> <input type="checkbox" id="chk-tri" onchange="toggleL(\'tri\')"></div>
+            <div class="layer-item"><label>&#9899; Triângulo Histórico</label> <input type="checkbox" id="chk-tri" onchange="toggleL(\'tri\')"></div>
+            <div class="layer-item"><label>🟦 Quadrilátero Histórico</label> <input type="checkbox" id="chk-quad" onchange="toggleL(\'quad\')"></div>
             <div class="layer-item"><label>🟣 Distritos</label> <input type="checkbox" id="chk-dist" onchange="toggleL(\'dist\')"></div>
             
             <hr style="border:0; border-top:1px solid #eee; margin: 12px 0;">
@@ -419,11 +438,11 @@ html_content <- paste0('
     var infraLabels = ', infra_labels_js_obj, ';
     var data = {
         socio_dens: ', json_socio_dens, ', socio_pop: ', json_socio_pop, ', socio_dom: ', json_socio_dom, ',
-        piu: ', json_piu, ', tri: ', json_tri, ', dist: ', json_dist, ', edif: ', json_edif, ', 
+        piu: ', json_piu, ', tri: ', json_tri, ', quad: ', json_quad, ', dist: ', json_dist, ', edif: ', json_edif, ', 
         tomb_geral: ', json_tomb_geral, ', tomb_status: ', json_tomb_status, ', tomb_orgao: ', json_tomb_orgao, ', 
         uso: ', json_uso, ', estab: ', json_estab, ', iptu: ', json_iptu, ',
         fav: ', json_fav, ', cort: ', json_cort, ', lote: ', json_lote, ',
-        parques: ', json_parques, ', pracas: ', json_pracas, ', arvores: ', json_arvores, ',
+        parques: ', json_parques, ', pracas: ', json_pracas, ', arvores: ', json_arvores, ', bosques: ', json_bosques, ', ecoponto: ', json_ecoponto, ', pev: ', json_pev, ', compostagem: ', json_compostagem, ',
         ', infra_js_data, '
     };
     ', logic_uso, '

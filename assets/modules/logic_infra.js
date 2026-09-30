@@ -122,9 +122,21 @@ function initInfra(map) {
             
             let finalName;
             
-            // Lógica Especial para WiFi: Mostra APENAS o endereço, sem duplicar
+            // Lógica Especial para WiFi e Projetos Urbanos
             if (layerId === 'infra_wifi') {
                 finalName = p['tx_enderec'] || "Endereço não disponível";
+            } else if (layerId === 'infra_subv_requalifica') {
+                let emp = p['Empreendimento'] || "";
+                let cla = p['Classificação'] || "";
+                try { emp = decodeURIComponent(escape(emp)); } catch(e) {}
+                try { cla = decodeURIComponent(escape(cla)); } catch(e) {}
+                finalName = emp + " (" + cla + ")";
+            } else if (layerId === 'infra_ruas_tematicas') {
+                let end = p['Endereço'] || p['Endereco'] || "";
+                let tem = p['Nome da Rua'] || p['Nome.da.Rua'] || "";
+                try { end = decodeURIComponent(escape(end)); } catch(e) {}
+                try { tem = decodeURIComponent(escape(tem)); } catch(e) {}
+                finalName = end + " (" + tem + ")";
             } else {
                 // Lógica Padrão
                 if (propKey && p[propKey]) {
@@ -208,7 +220,7 @@ function initInfra(map) {
 
     // 6. SOCIAL & CONECTIVIDADE
     addPt("infra_soc_equip",    data.infra_soc_equip,    PALETTE_SOC.assist, "Assistência Social", null, HEAD_SOC); 
-    addPoly("infra_conc_parc",  data.infra_conc_parc,    PALETTE_SOC.parc,   "Concessão / Parceria", null, HEAD_SOC); 
+    addPt("infra_conc_parc",    data.infra_conc_parc,    PALETTE_SOC.parc,   "Concessão / Parceria", null, HEAD_SOC); 
     // MUDANÇA: Passa null na coluna para a lógica especial cuidar do endereço
     addPt("infra_wifi",         data.infra_wifi,         PALETTE_SOC.wifi,   "WiFi Livre", null, HEAD_SOC);
 
@@ -232,6 +244,11 @@ function initInfra(map) {
     addPt("trans_bus_term",    data.trans_bus_term,  "#CA6F1E",   "Terminal de Ônibus", "nm_termina");
     addPt("trans_metro_est",   data.trans_metro_est, "#00539F",   "Estação de Metrô", "nm_estacao");
     addPt("trans_trem_est",    data.trans_trem_est,  "#BA4A00",   "Estação de Trem",  "nm_estacao");
+
+    // 10. PROJETOS URBANOS
+    const HEAD_PROJ = "#8E44AD";
+    addPt("infra_subv_requalifica", data.infra_subv_requalifica, "#9B59B6", "Subvenção e Requalifica", null, HEAD_PROJ);
+    addLine("infra_ruas_tematicas", data.infra_ruas_tematicas, "#E67E22", "Ruas Temáticas", null);
 
     // --- HOOK DE TOGGLE ---
     const originalToggle = window.toggleL;

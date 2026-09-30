@@ -51,7 +51,7 @@ const sidebar = document.getElementById('sidebar');
 const toggleBtn = document.getElementById('sidebar-toggle');
 toggleBtn.addEventListener('click', () => { 
     sidebar.classList.toggle('collapsed'); 
-    toggleBtn.innerHTML = sidebar.classList.contains('collapsed') ? '❯' : '❮'; 
+    toggleBtn.innerHTML = sidebar.classList.contains('collapsed') ? '&#10095;' : '&#10094;'; 
 });
 
 window.toggleSection = function(bodyId, headerEl) {
@@ -59,11 +59,11 @@ window.toggleSection = function(bodyId, headerEl) {
     var icon = headerEl.querySelector('.toggle-icon');
     if (content.style.display === "none") {
         content.style.display = "block";
-        icon.innerHTML = "▼";
+        icon.innerHTML = "&#9660;";
         headerEl.classList.remove('closed');
     } else {
         content.style.display = "none";
-        icon.innerHTML = "▶";
+        icon.innerHTML = "&#9654;";
         headerEl.classList.add('closed');
     }
 };
@@ -456,7 +456,7 @@ window.scrollShortcuts = function(dir) { document.getElementById('shortcuts-list
 document.addEventListener("DOMContentLoaded", () => {
     const chips = document.querySelectorAll(".chip-btn");
     chips.forEach(btn => {
-        const closeSpan = document.createElement("span"); closeSpan.innerHTML = "✕"; closeSpan.className = "close-mark";
+        const closeSpan = document.createElement("span"); closeSpan.innerHTML = "&times;"; closeSpan.className = "close-mark";
         closeSpan.onclick = (e) => { e.stopPropagation(); removePin(); };
         btn.appendChild(closeSpan);
     });
@@ -485,8 +485,8 @@ window.toggleCat = function(id) { var content = document.getElementById(id); var
 var layersByTab = {
     "tab-socio": ["socio_dens", "socio_pop", "socio_dom"],
     "tab-uso":   ["uso", "tomb_geral", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab", "iptu"], 
-    "tab-amb":   ["parques", "pracas", "arvores"],
-    "tab-infra": [ "trans_metro_est", "trans_trem_est", "trans_metro_lin", "trans_trem_lin", "trans_bus_term", "trans_bus_pt", "trans_bike", "infra_abs_bomprato", "infra_abs_feira", "infra_abs_mercado", "infra_abs_sacolao", "infra_soc_equip", "infra_conc_parc", "infra_wifi", "infra_cult_biblio", "infra_cult_espaco", "infra_cult_museu", "infra_cult_teatro", "infra_edu_tecnico", "infra_edu_infantil", "infra_edu_outros", "infra_edu_privada", "infra_edu_publica", "infra_edu_sist_s", "infra_esp_centro", "infra_esp_clube", "infra_esp_cdc", "infra_esp_estadio", "infra_sau_ambul", "infra_sau_hosp", "infra_sau_outros", "infra_sau_mental", "infra_sau_ubs", "infra_sau_dst", "infra_sau_urgencia", "infra_seg_bombeiro", "infra_seg_gcm", "infra_seg_civil", "infra_seg_militar", "infra_serv_consulado", "infra_serv_correios", "infra_serv_poupatempo", "infra_serv_shopping" ]
+    "tab-amb":   ["parques", "pracas", "arvores", "bosques", "ecoponto", "pev", "compostagem"],
+    "tab-infra": [ "trans_metro_est", "trans_trem_est", "trans_metro_lin", "trans_trem_lin", "trans_bus_term", "trans_bus_pt", "trans_bike", "infra_abs_bomprato", "infra_abs_feira", "infra_abs_mercado", "infra_abs_sacolao", "infra_soc_equip", "infra_conc_parc", "infra_wifi", "infra_cult_biblio", "infra_cult_espaco", "infra_cult_museu", "infra_cult_teatro", "infra_edu_tecnico", "infra_edu_infantil", "infra_edu_outros", "infra_edu_privada", "infra_edu_publica", "infra_edu_sist_s", "infra_esp_centro", "infra_esp_clube", "infra_esp_cdc", "infra_esp_estadio", "infra_sau_ambul", "infra_sau_hosp", "infra_sau_outros", "infra_sau_mental", "infra_sau_ubs", "infra_sau_dst", "infra_sau_urgencia", "infra_seg_bombeiro", "infra_seg_gcm", "infra_seg_civil", "infra_seg_militar", "infra_serv_consulado", "infra_serv_correios", "infra_serv_poupatempo", "infra_serv_shopping", "infra_subv_requalifica", "infra_ruas_tematicas" ]
 };
 
 function keepLabelsOnTop() { if (map.getLayer('dist_labels')) { map.moveLayer('dist_labels'); } }
@@ -607,7 +607,7 @@ function checkTransparency() {
         const infraLayers = layersByTab["tab-infra"];
         if (infraLayers.some(id => document.getElementById("chk-" + id)?.checked)) targetOpacity = 0.15; 
     } else {
-        const groundLayers = ["socio_dens", "socio_pop", "socio_dom", "fav", "cort", "lote", "uso", "parques", "pracas", "arvores", "tomb_geral", "tomb_status", "tomb_orgao", "estab", "iptu"];
+        const groundLayers = ["socio_dens", "socio_pop", "socio_dom", "fav", "cort", "lote", "uso", "parques", "pracas", "arvores", "bosques", "ecoponto", "pev", "compostagem", "tomb_geral", "tomb_status", "tomb_orgao", "estab", "iptu"];
         if (groundLayers.some(id => document.getElementById("chk-" + id)?.checked)) targetOpacity = 0.15;
     }
     map.setPaintProperty('edif', 'fill-extrusion-opacity-transition', { duration: 300 });
@@ -810,25 +810,7 @@ map.on("load", function () {
         if (typeof initAmb === "function") initAmb(map);
         if (typeof initInfra === "function") initInfra(map);
         if (typeof initSocio === "function") initSocio(map); 
-        if(typeof data.dist !== 'undefined' && data.dist !== 'null') { map.addSource("dist", {type:"geojson", data:data.dist}); map.addLayer({ id: "dist", type: "line", source: "dist", paint: { "line-color": "#7570b3", "line-width": 2, "line-dasharray": [2, 2] }, layout: { visibility: "none" } }); }
-        if(typeof data.piu !== 'undefined' && data.piu !== 'null') { map.addSource("piu", {type:"geojson", data:data.piu}); map.addLayer({ id: "piu", type: "line", source: "piu", paint: {"line-color": "#FF0000", "line-width": 3}, layout: {visibility: "visible"} }); }
-        if(typeof data.tri !== 'undefined' && data.tri !== 'null') { map.addSource("tri", {type:"geojson", data:data.tri}); map.addLayer({ id: "tri", type: "line", source: "tri", paint: {"line-color": "#000", "line-width": 2}, layout: {visibility: "none"} }); }
-        
-        if(typeof data.edif !== 'undefined' && data.edif !== 'null') {
-             map.addSource("edif", {type:"geojson", data:data.edif});
-             map.addLayer({
-                 id: "edif",
-                 type: "fill-extrusion",
-                 source: "edif",
-                 paint: {
-                     "fill-extrusion-color": ["get", "cor_hex"],
-                     "fill-extrusion-height": ["get", "altura"],
-                     "fill-extrusion-base": 0,
-                     "fill-extrusion-opacity": 0.9
-                 },
-                 layout: { visibility: "none" } 
-             });
-        }
+
 
         setStyle('mapa'); updateLegends(); checkTransparency(); keepLabelsOnTop(); 
         map.jumpTo({ center: [-46.633, -23.550], zoom: 12, pitch: 0, bearing: 0 });
