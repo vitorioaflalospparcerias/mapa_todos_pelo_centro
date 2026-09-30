@@ -8,12 +8,12 @@ library(shiny)
 
 options(rsconnect.http.timeout = 60)
 rsconnect::setAccountInfo(
-  name = 'saopaulo-parcerias', 
-  token = 'B66524391A6CF83E581118BD57F8574D', 
-  secret = 'mwn5xGcZmW+OPxUhdcPtPzkPryfgBRUTScb4f52/'
+  name = 'SEU_NOME', 
+  token = 'SEU_TOKEN', 
+  secret = 'SEU_SEGREDO'
 )
 
-if (!file.exists("public/index.html")) stop("? ERRO : 'public/index.html' n„o encontrado. Rode o script 03_build.R antes de fazer o deploy.")
+if (!file.exists("public/index.html")) stop("? ERRO : 'public/index.html' n√£o encontrado. Rode o script 03_build.R antes de fazer o deploy.")
 
 if (dir.exists("deploy_tmp")) unlink("deploy_tmp", recursive = TRUE)
 dir.create("deploy_tmp/www", recursive = TRUE)
