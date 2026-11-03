@@ -57,6 +57,23 @@ function initUso(map) {
         addTooltip("iptu");
     }
 
+    // --- IMÓVEIS NOTIFICADOS - FUNÇÃO SOCIAL ---
+    if(data.imoveis_notif && data.imoveis_notif !== "null") {
+        map.addSource("imoveis_notif", { type: "geojson", data: data.imoveis_notif });
+        map.addLayer({
+            id: "imoveis_notif", type: "circle", source: "imoveis_notif",
+            paint: {
+                "circle-color": "#E74C3C",
+                "circle-radius": 5.5,
+                "circle-stroke-width": 1.5,
+                "circle-stroke-color": "#ffffff",
+                "circle-opacity": 0.95
+            },
+            layout: { visibility: "none" }
+        });
+        addTooltip("imoveis_notif");
+    }
+
     // --- CAMADAS DE TOMBAMENTO ---
     
     // NOVA CAMADA: TOMBAMENTO GERAL

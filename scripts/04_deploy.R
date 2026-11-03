@@ -13,15 +13,14 @@ rsconnect::setAccountInfo(
   secret = 'SEU_SEGREDO'
 )
 
-if (!file.exists("public/index.html")) stop("? ERRO : 'public/index.html' não encontrado. Rode o script 03_build.R antes de fazer o deploy.")
+if (!file.exists("outputs/mapa.html")) stop("ERRO : 'outputs/mapa.html' não encontrado. Rode o script 03_build.R antes de fazer o deploy.")
 
 if (dir.exists("deploy_tmp")) unlink("deploy_tmp", recursive = TRUE)
 dir.create("deploy_tmp/www", recursive = TRUE)
 
-file.copy("public/index.html", "deploy_tmp/www/index_mapa.html", overwrite = TRUE)
-if (dir.exists("public/data")) {
-  dir.create("deploy_tmp/www/data")
-  file.copy(list.files("public/data", full.names = TRUE), "deploy_tmp/www/data/", overwrite = TRUE)
+file.copy("outputs/mapa.html", "deploy_tmp/www/index_mapa.html", overwrite = TRUE)
+if (file.exists("outputs/regua_logos.png")) {
+  file.copy("outputs/regua_logos.png", "deploy_tmp/www/regua_logos.png", overwrite = TRUE)
 }
 
 app_content <- "library(shiny)

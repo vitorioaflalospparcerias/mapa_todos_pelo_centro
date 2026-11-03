@@ -28,6 +28,12 @@ const LAYER_DATA = {
         year: "2021",
         desc: "Classifica\u00e7\u00e3o predominante do uso do solo por quadra fiscal."
     },
+    "imoveis_notif": {
+        title: "Imóveis Notificados - Função Social",
+        source: "GeoSampa / SMUL",
+        year: "2024",
+        desc: "Imóveis notificados no município de São Paulo por descumprimento da Função Social da Propriedade Urbana (PEUC e IPTU Progressivo no Tempo, com base no Art. 100 da Lei Municipal nº 16.050/2014 - PDE)."
+    },
     
     // --- NOVAS CAMADAS DE TOMBAMENTO ---
     "tomb_status": {

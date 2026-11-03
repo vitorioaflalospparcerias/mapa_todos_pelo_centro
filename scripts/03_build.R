@@ -10,9 +10,6 @@ library(tools)
 
 source("scripts/02_functions.R") 
 
-print(">>> Preparando GeoJSONs (Modo Otimizado)...")
-
-# Variáveis globais para legendas
 legenda_uso_html <- ""; legenda_tomb_status_html <- ""; legenda_tomb_orgao_html <- "";  
 legenda_socio_html <- ""; legenda_socio_pop_html <- ""; legenda_socio_dom_html <- "" 
 
@@ -27,7 +24,7 @@ prep_data <- function(path, tipo) {
   if(is.null(df) || nrow(df) == 0) return("null")
   
   df <- df[!st_is_empty(df), ]
-  if (!tipo %in% c("edificacao", "iptu_points", "estab", "arvores", "quadrilatero")) {
+  if (!tipo %in% c("edificacao", "iptu_points", "estab", "arvores", "quadrilatero", "imoveis_notificados")) {
     try({ df <- st_simplify(df, dTolerance = 0.00005, preserveTopology = TRUE) }, silent=TRUE)
   }
   
@@ -75,8 +72,7 @@ prep_data <- function(path, tipo) {
   } else if (tipo == "tomb_orgao") {
     has_protection <- function(col) { t <- toupper(as.character(col)); return(!is.na(t) & !str_detect(t, "NÃO CONSTA") & !str_detect(t, "NAO CONSTA") & str_length(t) > 2) }
     df <- df %>% mutate( is_mun = has_protection(bp_compres), is_est = has_protection(bp_condeph), is_fed = has_protection(bp_iphan) ) %>% mutate( jurisdicao = case_when( is_mun & is_est & is_fed ~ "Três Esferas (Mun/Est/Fed)", is_mun & is_est ~ "Municipal + Estadual", is_mun & is_fed ~ "Municipal + Federal", is_est & is_fed ~ "Estadual + Federal", is_mun ~ "Apenas Municipal (Conpresp)", is_est ~ "Apenas Estadual (Condephaat)", is_fed ~ "Apenas Federal (IPHAN)", TRUE ~ "Outros / Em Análise" ) )
-    
-    # NOVA PALETA: Mais neutra, escura e com cores bem distinguíveis
+
     cores_org <- c("Três Esferas (Mun/Est/Fed)" = "#111111", 
                    "Municipal + Estadual" = "#5B2C6F", 
                    "Municipal + Federal" = "#7B241C", 
@@ -117,6 +113,10 @@ prep_data <- function(path, tipo) {
   } else if (tipo == "infra" || tipo == "ambiental") {
     cols <- names(df)[sapply(df, is.character)]; for(c in cols) df[[c]] <- fix_encoding_uso(df[[c]])
     df$cor_hex <- if(tipo=="ambiental") "#27AE60" else "#999999"
+  } else if (tipo == "imoveis_notificados") {
+    cols <- names(df)[sapply(df, is.character)]
+    for(c in cols) df[[c]] <- fix_utf8(df[[c]])
+    df$cor_hex <- "#E74C3C"
   } else {
     cores <- list(piu="#FF0000", triangulo="#000000", distrito="#7570b3", favela="#fd8d3c", cortico="#984ea3", loteamento="#33a02c")
     df$cor_hex <- if(!is.null(cores[[tipo]])) cores[[tipo]] else "#999999"
@@ -139,6 +139,7 @@ json_quad <- prep_data("data/processed/layer_quadrilatero.rds", "quadrilatero")
 json_dist <- prep_data("data/processed/layer_distritos.rds", "distrito")
 json_estab <- prep_data("data/processed/estabelecimentos_enriquecido.gpkg", "estabelecimentos")
 json_iptu  <- prep_data("data/processed/layer_iptu.rds", "iptu_points")
+json_imoveis_notif <- prep_data("data/processed/layer_imoveis_notificados.rds", "imoveis_notificados")
 json_tomb_geral <- prep_data("data/processed/layer_tombados.rds", "tomb_geral") 
 json_tomb_status <- prep_data("data/processed/layer_tombados.rds", "tomb_status")
 json_tomb_orgao  <- prep_data("data/processed/layer_tombados.rds", "tomb_orgao")
@@ -210,6 +211,12 @@ const LAYER_DATA = {
         source: "IPTU", 
         year: "2025", 
         desc: "Pontos localizados com base na geocodificação do IPTU 2025." 
+    },
+    "imoveis_notif": {
+        title: "Imóveis Notificados - Função Social",
+        source: "GeoSampa / SMUL",
+        year: "2024",
+        desc: "Imóveis notificados no município de São Paulo por descumprimento da Função Social da Propriedade Urbana (PEUC e IPTU Progressivo no Tempo, com base no Art. 100 da Lei Municipal nº 16.050/2014 - PDE)."
     },
     "socio_dens": { title: "Densidade Demográfica", source: "Censo IBGE", year: "2022", desc: "Habitantes por km²." },
     "socio_pop": { title: "População Absoluta", source: "Censo IBGE", year: "2022", desc: "Total de habitantes." },
@@ -337,6 +344,7 @@ html_content <- paste0('
             
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'estab\')">!</span><label>🏪 Usos dos Estabelecimentos</label> <input type="checkbox" id="chk-estab" onchange="toggleL(\'estab\')"></div>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'iptu\')">!</span><label>📍 Características dos Imóveis</label> <input type="checkbox" id="chk-iptu" onchange="toggleL(\'iptu\')"></div>
+            <div class="layer-item"><span class="info-icon" onclick="showInfo(\'imoveis_notif\')">!</span><label>📜 Imóveis Notificados - Função Social</label> <input type="checkbox" id="chk-imoveis_notif" onchange="toggleL(\'imoveis_notif\')"></div>
             
             <span class="group-title">Habitação Precária</span>
             <div class="layer-item"><span class="info-icon" onclick="showInfo(\'fav\')">!</span><label>🟧 Favelas</label> <input type="checkbox" id="chk-fav" onchange="toggleL(\'fav\')"></div>
@@ -417,6 +425,87 @@ html_content <- paste0('
     </div>
 </div>
 
+<div id="legenda-iptu-explica" class="legend-container" style="position: absolute; top: 115px; right: 50px; width: 300px; display: none; z-index: 1000; padding: 15px; max-height: calc(100vh - 145px); overflow-y: auto;">
+    <div class="legend-title" style="font-size: 14px; margin-bottom: 10px;">Metodologia de Agrupamento</div>
+    <div style="font-size:12px; color:#555; line-height:1.5;">
+        <div style="margin-bottom:8px;">
+            <strong style="font-size:13px; color:#333;">Cálculo dos Indicadores:</strong>
+            <ul style="margin: 6px 0 0 18px; padding:0;">
+                <li style="margin-bottom: 4px;">🏢 <b>Unidades:</b> Contagem total de registros.</li>
+                <li style="margin-bottom: 4px;">🏗️ <b>Área Constr.:</b> Soma total das unidades.</li>
+                <li style="margin-bottom: 4px;">📐 <b>Terreno:</b> Média das áreas dos lotes.</li>
+                <li style="margin-bottom: 4px;">⬆️ <b>Pavimentos:</b> Valor máximo (altura).</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div id="card-notif-explica" class="legend-container" style="position: absolute; top: 115px; right: 50px; width: 330px; display: none; z-index: 1000; padding: 0; max-height: calc(100vh - 145px); box-shadow: 0 4px 20px rgba(0,0,0,0.15); border-left: 5px solid #E74C3C; background: rgba(255, 255, 255, 0.98); border-radius: 8px; overflow: hidden;">
+    <div onclick="toggleNotifCard()" style="padding: 11px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #fff; user-select: none; transition: background 0.2s;" onmouseover="this.style.background=\'#fafafa\'" onmouseout="this.style.background=\'#fff\'">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 15px;">📜</span>
+            <div>
+                <div style="font-weight: 800; font-size: 12px; color: #E74C3C; text-transform: uppercase; letter-spacing: 0.5px;">Função Social da Propriedade</div>
+                <div style="font-size: 11px; color: #666; font-weight: 500;">Imóveis Notificados (PEUC)</div>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <span id="notif-card-toggle-icon" style="font-size: 10px; color: #666; font-weight: bold; padding: 3px 6px; background: #f0f0f0; border-radius: 4px; transition: background 0.2s;" title="Expandir/Recolher Guia">&#9660; Abrir</span>
+            <span onclick="event.stopPropagation(); closeNotifCard();" style="cursor: pointer; font-size: 18px; color: #bbb; font-weight: bold; line-height: 1; padding: 0 4px;" title="Fechar Card" onmouseover="this.style.color=\'#E74C3C\'" onmouseout="this.style.color=\'#bbb\'">&times;</span>
+        </div>
+    </div>
+
+    <div id="notif-card-body" style="display: none; padding: 12px 14px 16px 14px; max-height: calc(100vh - 215px); overflow-y: auto; border-top: 1px solid #eee;">
+        <p style="font-size: 11px; color: #444; line-height: 1.45; margin: 0 0 10px 0; border-bottom: 1px solid #eee; padding-bottom: 8px;">
+            Imóveis mapeados pela Prefeitura de São Paulo que descumprem a <b>Função Social da Propriedade Urbana</b> (Art. 100 da Lei 16.050/2014 - PDE), sujeitos às sanções do <b>PEUC</b> (Parcelamento, Edificação ou Utilização Compulsórios) e IPTU Progressivo.
+        </p>
+
+        <div style="font-size: 11px; color: #333; line-height: 1.4;">
+            <div style="font-weight: 700; color: #2C3E50; margin-bottom: 7px; font-size: 11px; text-transform: uppercase; display: flex; align-items: center; gap: 4px;">
+                <span>📖</span> Guia de Termos e Tooltips:
+            </div>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 7px 9px; margin-bottom: 7px;">
+                <div style="font-weight: 700; color: #1e293b; margin-bottom: 2px;">🏷️ SQL (Setor-Quadra-Lote)</div>
+                <div style="color: #64748b; font-size: 10.5px;">
+                    Identificador oficial do cadastro imobiliário. Em edifícios verticais, múltiplos SQLs na mesma coordenada representam diferentes unidades autônomas (apartamentos/salas) do mesmo prédio.
+                </div>
+            </div>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 7px 9px; margin-bottom: 7px;">
+                <div style="font-weight: 700; color: #1e293b; margin-bottom: 2px;">📋 Tipologias de Notificação</div>
+                <ul style="margin: 3px 0 0 15px; padding: 0; font-size: 10.5px; color: #475569;">
+                    <li style="margin-bottom: 3px;"><b>Não Utilizado:</b> Prédio ou unidade concluída há mais de 1 ano desocupada, sem uso efetivo.</li>
+                    <li style="margin-bottom: 3px;"><b>Subutilizado:</b> Terreno construído cujo aproveitamento é inferior ao Coeficiente de Aproveitamento Mínimo do PDE.</li>
+                    <li><b>Não Edificado:</b> Terreno/lote vago com área superior a 500 m² sem nenhuma edificação.</li>
+                </ul>
+            </div>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 7px 9px; margin-bottom: 7px;">
+                <div style="font-weight: 700; color: #1e293b; margin-bottom: 2px;">⚖️ Situação do Processo</div>
+                <ul style="margin: 3px 0 0 15px; padding: 0; font-size: 10.5px; color: #475569;">
+                    <li style="margin-bottom: 3px;"><b>Monitoramento:</b> Processo ativo fiscalizado pela SMUL para cumprimento dos prazos legais.</li>
+                    <li><b>Impossibilidade Jurídica:</b> Notificação com prazos sobrestados temporariamente por litígio judicial, inventário ou pendência cartorária.</li>
+                </ul>
+            </div>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 7px 9px; margin-bottom: 7px;">
+                <div style="font-weight: 700; color: #1e293b; margin-bottom: 2px;">📈 IPTU Progressivo no Tempo</div>
+                <div style="color: #64748b; font-size: 10.5px;">
+                    Instrumento sancionatório onde a alíquota de IPTU é majorada por até 5 anos consecutivos (atingindo o teto de 15%) pelo não cumprimento das obrigações urbanísticas.
+                </div>
+            </div>
+
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 7px 9px;">
+                <div style="font-weight: 700; color: #1e293b; margin-bottom: 2px;">🗺️ Macroárea de Atuação (PDE)</div>
+                <div style="color: #64748b; font-size: 10.5px;">
+                    Região de planejamento do Plano Diretor que estabelece a exigência da função social (ex: <i>MEM - Estruturação Metropolitana</i> e <i>MUC - Urbanização Consolidada</i>).
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="legenda-tomb-geral" class="legend-container" style="display: none;">
     <div class="legend-title">Bens Tombados</div>
     <div class="leg-item"><span style="background:#8E44AD;"></span>Área Protegida / Tombada</div>
@@ -432,6 +521,10 @@ html_content <- paste0('
     <div class="leg-item"><span style="background:#984ea3;"></span>Cortiços</div>
     <div class="leg-item"><span style="background:#33a02c;"></span>Loteamentos</div>
 </div>
+<div id="legenda-imoveis-notif" class="legend-container" style="display: none;">
+    <div class="legend-title">Imóveis Notificados</div>
+    <div class="leg-item"><span style="background:#E74C3C;"></span>Imóvel Notificado (Função Social)</div>
+</div>
 
 <script>
     ', metadata_js_content, '
@@ -440,7 +533,7 @@ html_content <- paste0('
         socio_dens: ', json_socio_dens, ', socio_pop: ', json_socio_pop, ', socio_dom: ', json_socio_dom, ',
         piu: ', json_piu, ', tri: ', json_tri, ', quad: ', json_quad, ', dist: ', json_dist, ', edif: ', json_edif, ', 
         tomb_geral: ', json_tomb_geral, ', tomb_status: ', json_tomb_status, ', tomb_orgao: ', json_tomb_orgao, ', 
-        uso: ', json_uso, ', estab: ', json_estab, ', iptu: ', json_iptu, ',
+        uso: ', json_uso, ', estab: ', json_estab, ', iptu: ', json_iptu, ', imoveis_notif: ', json_imoveis_notif, ',
         fav: ', json_fav, ', cort: ', json_cort, ', lote: ', json_lote, ',
         parques: ', json_parques, ', pracas: ', json_pracas, ', arvores: ', json_arvores, ', bosques: ', json_bosques, ', ecoponto: ', json_ecoponto, ', pev: ', json_pev, ', compostagem: ', json_compostagem, ',
         ', infra_js_data, '
@@ -457,7 +550,6 @@ html_content <- paste0('
 
 write(html_content, "outputs/mapa.html")
 
-# Copia para outputs para funcionar localmente no seu computador
 if (file.exists("www/regua_logos.png")) {
   file.copy("www/regua_logos.png", "outputs/regua_logos.png", overwrite=TRUE)
 }

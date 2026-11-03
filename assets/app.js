@@ -252,6 +252,7 @@ function checkSelectButton() {
 function calculateStats(features) {
     const stats = {};
     const staticLabels = { 
+        'imoveis_notif': 'Imóveis Notificados - Função Social',
         'estab':'Usos dos Estabelecimentos', 
         'iptu':'Características dos Imóveis',
         'fav':'Favelas', 'cort':'Cortiços', 'lote':'Loteamentos', 
@@ -484,7 +485,7 @@ window.toggleCat = function(id) { var content = document.getElementById(id); var
 
 var layersByTab = {
     "tab-socio": ["socio_dens", "socio_pop", "socio_dom"],
-    "tab-uso":   ["uso", "tomb_geral", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab", "iptu"], 
+    "tab-uso":   ["uso", "tomb_geral", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab", "iptu", "imoveis_notif"], 
     "tab-amb":   ["parques", "pracas", "arvores", "bosques", "ecoponto", "pev", "compostagem"],
     "tab-infra": [ "trans_metro_est", "trans_trem_est", "trans_metro_lin", "trans_trem_lin", "trans_bus_term", "trans_bus_pt", "trans_bike", "infra_abs_bomprato", "infra_abs_feira", "infra_abs_mercado", "infra_abs_sacolao", "infra_soc_equip", "infra_conc_parc", "infra_wifi", "infra_cult_biblio", "infra_cult_espaco", "infra_cult_museu", "infra_cult_teatro", "infra_edu_tecnico", "infra_edu_infantil", "infra_edu_outros", "infra_edu_privada", "infra_edu_publica", "infra_edu_sist_s", "infra_esp_centro", "infra_esp_clube", "infra_esp_cdc", "infra_esp_estadio", "infra_sau_ambul", "infra_sau_hosp", "infra_sau_outros", "infra_sau_mental", "infra_sau_ubs", "infra_sau_dst", "infra_sau_urgencia", "infra_seg_bombeiro", "infra_seg_gcm", "infra_seg_civil", "infra_seg_militar", "infra_serv_consulado", "infra_serv_correios", "infra_serv_poupatempo", "infra_serv_shopping", "infra_subv_requalifica", "infra_ruas_tematicas" ]
 };
@@ -556,7 +557,7 @@ window.toggleL = function(id) {
     
     if (chk.checked) {
         if (id === 'iptu') {
-            const conflictLayers = ["uso", "tomb_geral", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab", "socio_dens", "socio_pop", "socio_dom"];
+            const conflictLayers = ["uso", "tomb_geral", "tomb_status", "tomb_orgao", "fav", "cort", "lote", "estab", "imoveis_notif", "socio_dens", "socio_pop", "socio_dom"];
             conflictLayers.forEach(otherId => {
                 const otherChk = document.getElementById("chk-" + otherId);
                 if (otherChk && otherChk.checked) {
@@ -607,7 +608,7 @@ function checkTransparency() {
         const infraLayers = layersByTab["tab-infra"];
         if (infraLayers.some(id => document.getElementById("chk-" + id)?.checked)) targetOpacity = 0.15; 
     } else {
-        const groundLayers = ["socio_dens", "socio_pop", "socio_dom", "fav", "cort", "lote", "uso", "parques", "pracas", "arvores", "bosques", "ecoponto", "pev", "compostagem", "tomb_geral", "tomb_status", "tomb_orgao", "estab", "iptu"];
+        const groundLayers = ["socio_dens", "socio_pop", "socio_dom", "fav", "cort", "lote", "uso", "parques", "pracas", "arvores", "bosques", "ecoponto", "pev", "compostagem", "tomb_geral", "tomb_status", "tomb_orgao", "estab", "iptu", "imoveis_notif"];
         if (groundLayers.some(id => document.getElementById("chk-" + id)?.checked)) targetOpacity = 0.15;
     }
     map.setPaintProperty('edif', 'fill-extrusion-opacity-transition', { duration: 300 });
@@ -637,10 +638,37 @@ function updateLegends() {
     var iptu = document.getElementById("chk-iptu")?.checked;
     if(document.getElementById("legenda-iptu-explica"))
         document.getElementById("legenda-iptu-explica").style.display = iptu ? "block" : "none";
+        
+    var notif = document.getElementById("chk-imoveis_notif")?.checked;
+    if(document.getElementById("legenda-imoveis-notif"))
+        document.getElementById("legenda-imoveis-notif").style.display = notif ? "block" : "none";
+    if(document.getElementById("card-notif-explica")) {
+        document.getElementById("card-notif-explica").style.display = notif ? "block" : "none";
+        if (!notif) {
+            const body = document.getElementById('notif-card-body');
+            const icon = document.getElementById('notif-card-toggle-icon');
+            if (body) body.style.display = 'none';
+            if (icon) icon.innerHTML = '&#9660;';
+        }
+    }
 }
 
+window.toggleNotifCard = function() {
+    const body = document.getElementById('notif-card-body');
+    const icon = document.getElementById('notif-card-toggle-icon');
+    if (!body) return;
+    const isHidden = (body.style.display === 'none' || body.style.display === '');
+    body.style.display = isHidden ? 'block' : 'none';
+    if (icon) icon.innerHTML = isHidden ? '&#9650;' : '&#9660;';
+};
+
+window.closeNotifCard = function() {
+    const card = document.getElementById('card-notif-explica');
+    if (card) card.style.display = 'none';
+};
+
 function addTooltip(layerId, propName) {
-    if (layerId === 'estab' || layerId === 'iptu') {
+    if (layerId === 'estab' || layerId === 'iptu' || layerId === 'imoveis_notif') {
         map.on('click', layerId, (e) => {
             if (isSelecting) return;
             
@@ -649,8 +677,8 @@ function addTooltip(layerId, propName) {
             
             if (currentClickPopup) { currentClickPopup.remove(); currentClickPopup = null; }
             
-            let headerColor = (layerId === 'estab') ? "#1ABC9C" : "#2980B9"; 
-            let titleText = (layerId === 'estab') ? "USOS DOS ESTABELECIMENTOS" : "CARACTERÍSTICAS DOS IMÓVEIS";
+            let headerColor = (layerId === 'estab') ? "#1ABC9C" : (layerId === 'iptu' ? "#2980B9" : "#E74C3C"); 
+            let titleText = (layerId === 'estab') ? "USOS DOS ESTABELECIMENTOS" : (layerId === 'iptu' ? "CARACTERÍSTICAS DOS IMÓVEIS" : "IMÓVEIS NOTIFICADOS - FUNÇÃO SOCIAL");
             const fmt = (n) => n ? parseFloat(n).toLocaleString('pt-BR', {maximumFractionDigits: 0}) : '-';
 
             let totalUnidades = features.length;
@@ -661,6 +689,7 @@ function addTooltip(layerId, propName) {
             let geocodeScore = 0; 
             
             let estabListString = "";
+            let notifItems = [];
             let processedItems = new Set(); 
 
             features.forEach(f => {
@@ -691,8 +720,9 @@ function addTooltip(layerId, propName) {
                             <div style="margin-bottom:3px; font-size:11px;">📍 <span style="color:#ccc;">${endereco}</span></div>
                             <div style="font-size:11px;">🎯 <b>Geolocalização:</b> <span style="color:${valPrecisao.color}; font-weight:bold;">${valPrecisao.text}</span></div>
                         </li>`;
-                    } 
-                    else {
+                    } else if (layerId === 'imoveis_notif') {
+                        notifItems.push(p);
+                    } else {
                         const end = (p['logradouro'] || '') + ', ' + (p['numero'] || 'S/N');
                         const endLimpo = end.replace(/^, /, "").trim();
                         if(endLimpo.length > 3) enderecosUnicos.add(endLimpo);
@@ -714,6 +744,51 @@ function addTooltip(layerId, propName) {
             if (layerId === 'estab') {
                  htmlContent += `<div style="margin-bottom:8px;"><b>${processedItems.size}</b> usos encontrados neste local.</div>`;
                  htmlContent += `<ul style="margin:0; padding-left:0; list-style-type: none; max-height:200px; overflow-y:auto;">${estabListString}</ul>`;
+            } else if (layerId === 'imoveis_notif') {
+                if (notifItems.length > 1) {
+                    htmlContent += `<div style="margin-bottom:8px; font-size:11px; color:#aaa;"><b>${notifItems.length}</b> registros de notificação neste ponto:</div>`;
+                }
+                htmlContent += `<div style="max-height:280px; overflow-y:auto; padding-right:2px;">`;
+                notifItems.forEach(p => {
+                    const sql = p['sql_formatado'] || p['cd_sql_imo'] || '-';
+                    const tipologia = p['tipologia_label'] || p['dc_tipolog'] || '-';
+                    const situacao = p['dc_situaca'] || '-';
+                    const iptuProg = p['in_iptu_pr'] || 'Não';
+                    const macroarea = p['macroarea_label'] || p['tx_area_at'] || '-';
+                    const idNotif = p['cd_identif'] || '';
+
+                    const corTipologia = "#E74C3C";
+
+                    const badgeIptu = (iptuProg === 'Sim' || iptuProg === 'SIM') 
+                        ? '<span style="background:#C0392B; color:#fff; font-weight:bold; padding:2px 7px; border-radius:3px; font-size:10px;">⚠️ SIM (Aplicado)</span>'
+                        : '<span style="background:#27AE60; color:#fff; font-weight:bold; padding:2px 7px; border-radius:3px; font-size:10px;">Não Aplicado</span>';
+
+                    htmlContent += `
+                        <div style="background:rgba(255,255,255,0.08); padding:9px 10px; border-radius:5px; margin-bottom:8px; line-height:1.5; font-size:11px; border-left:3px solid #E74C3C;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:6px; align-items:center;">
+                                <span style="font-size:12px; color:#fff; font-weight:bold;">🏷️ SQL: <span style="font-family:monospace; background:rgba(255,255,255,0.15); padding:1px 5px; border-radius:3px;">${sql}</span></span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px; align-items:center;">
+                                <span style="color:#ddd;">Tipologia:</span>
+                                <span style="background:rgba(231,76,60,0.25); border:1px solid #E74C3C; color:#ff7675; font-weight:bold; padding:1px 6px; border-radius:3px; font-size:10px;">${tipologia}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                <span style="color:#ddd;">Situação:</span>
+                                <span style="color:#fff; text-align:right;">${situacao}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; margin-bottom:4px; align-items:center;">
+                                <span style="color:#ddd;">IPTU Progressivo:</span>
+                                <span>${badgeIptu}</span>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; border-top:1px dashed #555; padding-top:4px; margin-top:5px;">
+                                <span style="color:#ddd;">Macroárea (PDE):</span>
+                                <span style="color:#fff; text-align:right; max-width:160px; font-size:10px;">${macroarea}</span>
+                            </div>
+                            ${idNotif ? `<div style="font-size:9px; color:#888; margin-top:4px; text-align:right;">ID Cadastro: ${idNotif}</div>` : ''}
+                        </div>
+                    `;
+                });
+                htmlContent += `</div>`;
             } else {
                 let listaEnderecos = Array.from(enderecosUnicos).sort();
                 let displayEnd = "";

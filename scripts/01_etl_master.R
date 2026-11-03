@@ -231,6 +231,7 @@ path_loteamento <- file.path(base_raw, "loteamentos_irregulares/SIRGAS_SHP_lotea
 path_parques    <- file.path(base_raw, "parques_conservacao/cadparcs_parque_unidade_conservacao.shp")
 path_arvores    <- file.path(base_raw, "SIRGAS_SHP_arvore_/SIRGAS_SHP_arvore_.shp")
 path_pracas     <- file.path(base_raw, "praca_largo/SIRGAS_SHP_PRACA_LARGO.shp")
+path_imoveis_notif <- file.path(base_raw, "imoveis_notificados_funcao_social/imovel_notificado.shp")
 
 uso_piu <- unique(st_filter(ler_transformar(path_uso_solo), piu))
 uso_piu$area_m2 <- as.numeric(st_area(uso_piu))
@@ -243,6 +244,37 @@ proc_save(unique(st_filter(ler_transformar(path_loteamento), piu)), "layer_lotea
 proc_save(unique(st_filter(ler_transformar(path_parques), piu)), "layer_amb_parques")
 proc_save(unique(st_filter(ler_transformar(path_pracas), piu)), "layer_amb_pracas")
 proc_save(unique(st_filter(ler_transformar(path_arvores), piu)), "layer_amb_arvores")
+
+if (file.exists(path_imoveis_notif)) {
+  shp_notif <- ler_transformar(path_imoveis_notif)
+  if (!is.null(shp_notif)) {
+    shp_notif_piu <- unique(st_filter(shp_notif, piu)) %>%
+      mutate(
+        sql_formatado = ifelse(nchar(cd_sql_imo) >= 10,
+                               paste0(substr(cd_sql_imo, 1, 3), ".", substr(cd_sql_imo, 4, 6), ".", substr(cd_sql_imo, 7, 10)),
+                               cd_sql_imo),
+        tipologia_label = case_when(
+          dc_tipolog == "NAO UTILIZADO" ~ "Não Utilizado",
+          dc_tipolog == "SUBUTILIZADO"  ~ "Subutilizado",
+          dc_tipolog == "NAO EDIFICADO" ~ "Não Edificado",
+          TRUE ~ dc_tipolog
+        ),
+        macroarea_label = case_when(
+          tx_area_at == "MEM"   ~ "Estruturação Metropolitana (MEM)",
+          tx_area_at == "MUC"   ~ "Urbanização Consolidada (MUC)",
+          tx_area_at == "MQU"   ~ "Qualificação da Urbanização (MQU)",
+          tx_area_at == "MRVU"  ~ "Redução da Vulnerab. Urbana (MRVU)",
+          tx_area_at == "MRVUA" ~ "Redução Vulnerab. Urbana / Recup. Amb. (MRVUA)",
+          tx_area_at == "MCQUA" ~ "Contenção Urbana / Qualif. Amb. (MCQUA)",
+          TRUE ~ tx_area_at
+        ),
+        cor_hex = "#E74C3C"
+      )
+    proc_save(shp_notif_piu, "layer_imoveis_notificados")
+    print(paste("    > Imóveis Notificados Processados:", nrow(shp_notif_piu), "unidades no PIU."))
+  }
+}
+
 proc_save(piu, "layer_piu")
 proc_save(triangulo, "layer_triangulo")
 proc_save(quadrilatero, "layer_quadrilatero")
